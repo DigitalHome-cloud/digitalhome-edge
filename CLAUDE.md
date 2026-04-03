@@ -97,10 +97,11 @@ sudo systemctl restart nodered      # if flows changed
 ```
 
 The repo should be cloned at `/home/dhc-svc/digitalhome-edge/` on the server.
-If it isn't yet, set it up with:
+For a full fresh install (new server), use the install script:
 ```bash
-sudo -u dhc-svc git clone <repo-url> /home/dhc-svc/digitalhome-edge
+sudo bash install.sh
 ```
+See `docs/install.md` for the full install procedure and post-install steps.
 
 ## Web UX
 
