@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "instance": {
+    "id": "digitalhome-edge-01",
+    "name": "My Digitalhome",
+    "location": "Home"
+  },
+  "nodered": {
+    "url": "http://localhost:1880"
+  },
+  "cloud": {
+    "api_url": "https://api.digitalhome.cloud",
+    "api_key": ""
+  },
+  "db": {
+    "path": "/home/dhc-svc/digitalhome-edge/db/digitalhome.db"
+  }
+}

@@ -172,6 +172,44 @@ id, name, protocol, address, room, type, last_seen, notes
 
 ---
 
+## Component Inventory & Licences
+
+> **Requirement:** all software components running on the edge server must be
+> open source or freely self-hostable without a commercial subscription.
+
+### Open source ✓
+
+| Component | Role | Licence |
+|---|---|---|
+| [Node-RED](https://nodered.org) | Flow engine, device bridge, web UI host | Apache 2.0 |
+| [node-red-contrib-ccu](https://github.com/hobbyquaker/node-red-contrib-ccu) | Homematic CCU integration | MIT |
+| [node-red-contrib-huemagic](https://github.com/Fodlos/node-red-contrib-huemagic) | Philips Hue integration | MIT |
+| [@flowfuse/node-red-dashboard](https://github.com/FlowFuse/node-red-dashboard) | Dashboard UI palette for Node-RED | Apache 2.0 |
+| [Python 3.12](https://python.org) | MCP server runtime | PSF |
+| [FastMCP (`mcp`)](https://github.com/modelcontextprotocol/python-sdk) | MCP server framework | MIT |
+| [httpx](https://www.python-httpx.org) | Async HTTP client | BSD-3-Clause |
+| [aiosqlite](https://github.com/omnilib/aiosqlite) | Async SQLite wrapper | MIT |
+| [python-dotenv](https://github.com/theskumar/python-dotenv) | `.env` loader | BSD-3-Clause |
+| [SQLite](https://sqlite.org) | Embedded database | Public domain |
+| [Ubuntu Server 24.04 LTS](https://ubuntu.com) | Host OS | Various OSS |
+| [MCP protocol spec](https://modelcontextprotocol.io) | Agent-tool communication protocol | MIT |
+
+### Proprietary — accepted exceptions
+
+| Component | Role | Notes |
+|---|---|---|
+| **Claude (Anthropic)** | AI agent | Proprietary commercial model. The MCP protocol and SDK are open source; the model itself is not. Acceptable because the edge server is not *dependent* on Claude — it can be replaced by any MCP-compatible agent. |
+| **Homematic CCU firmware** | Device controller firmware | Proprietary (eQ-3 hardware). Local-only, no cloud dependency. |
+| **Philips Hue Bridge firmware** | Light controller firmware | Proprietary (Signify hardware). Local API used; no Hue cloud dependency. |
+
+### Note on FlowFuse
+
+`@flowfuse/node-red-dashboard` (the npm package) is Apache 2.0. FlowFuse also
+sells a commercial hosted platform — that product is not used here. The
+self-hosted dashboard palette has no commercial dependency.
+
+---
+
 ## Service Accounts & Ports
 
 All services run as `dhc-svc` (system account, no login shell).
@@ -188,10 +226,12 @@ Firewall: `ufw` — only ports 22, 1880, 8000 open.
 
 ## Open Items
 
-- [ ] Hue API key — register at `http://192.168.1.15/debug/clip.html`, add to `.env`
-- [ ] digitalhome.cloud URL + API key — add to `.env`
+- [ ] Hue API key — register at `http://192.168.1.15/debug/clip.html`, add to `digitalhome.edge.config.cache`
+- [ ] digitalhome.cloud URL + API key — add to `digitalhome.edge.config.cache` (cloud-sync will automate this later)
 - [ ] Build initial Node-RED flows for Homematic + Hue
-- [ ] Implement `kb_search` / `kb_add` / `agent_log_write` MCP tools
-- [ ] Create SQLite schema and initialise DB on server
+- [x] Implement `kb_search` / `kb_add` / `agent_log_write` MCP tools
+- [x] Create SQLite schema (DB auto-initialised on first server startup)
 - [ ] Export first flow snapshot to `flows/exported/`
 - [ ] Write `flows/flow-api.md` endpoint catalogue
+- [ ] Install Node-RED Dashboard v2 (`@flowfuse/node-red-dashboard`) for operational web UX at `:1880/ui`
+- [ ] Implement cloud config sync from `digitalhome.cloud` → `digitalhome.edge.config.cache`

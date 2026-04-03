@@ -4,18 +4,80 @@ Claude talks exclusively to Node-RED HTTP endpoints and digitalhome.cloud REST.
 All device logic (Homematic, Philips Hue) lives in Node-RED flows.
 """
 
+import json
 import os
+import aiosqlite
 import httpx
+from contextlib import asynccontextmanager
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
-NODERED_URL   = os.getenv("NODERED_URL",   "http://localhost:1880")
-CLOUD_API_URL = os.getenv("CLOUD_API_URL", "")
-CLOUD_API_KEY = os.getenv("CLOUD_API_KEY", "")
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_CONFIG_CACHE = os.path.join(_PROJECT_ROOT, "digitalhome.edge.config.cache")
 
-mcp = FastMCP("digitalhome-edge")
+_CONFIG_DEFAULTS: dict = {
+    "version": 1,
+    "instance": {
+        "id": "digitalhome-edge-01",
+        "name": "My Digitalhome",
+        "location": "Home",
+    },
+    "nodered": {
+        "url": os.getenv("NODERED_URL", "http://localhost:1880"),
+    },
+    "cloud": {
+        "api_url": os.getenv("CLOUD_API_URL", "https://api.digitalhome.cloud"),
+        "api_key": os.getenv("CLOUD_API_KEY", ""),
+    },
+    "db": {
+        "path": os.getenv("DB_PATH", "/home/dhc-svc/digitalhome-edge/db/digitalhome.db"),
+    },
+}
+
+
+def _load_config() -> dict:
+    """
+    Load config from digitalhome.edge.config.cache.
+    On first startup the file doesn't exist — create it with defaults seeded
+    from environment variables (which take precedence over hardcoded values).
+    The cache is gitignored and will eventually be populated from digitalhome.cloud.
+    """
+    if os.path.exists(_CONFIG_CACHE):
+        with open(_CONFIG_CACHE) as f:
+            return json.load(f)
+    # First startup: write defaults so operators can edit the file directly.
+    with open(_CONFIG_CACHE, "w") as f:
+        json.dump(_CONFIG_DEFAULTS, f, indent=2)
+    return _CONFIG_DEFAULTS
+
+
+_cfg = _load_config()
+
+NODERED_URL   = _cfg["nodered"]["url"]
+CLOUD_API_URL = _cfg["cloud"]["api_url"]
+CLOUD_API_KEY = _cfg["cloud"]["api_key"]
+DB_PATH       = _cfg["db"]["path"]
+
+
+async def _init_db() -> None:
+    """Run schema.sql against the DB — idempotent (all CREATEs use IF NOT EXISTS)."""
+    schema_path = os.path.join(os.path.dirname(__file__), "..", "db", "schema.sql")
+    with open(schema_path) as f:
+        schema = f.read()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executescript(schema)
+        await db.commit()
+
+
+@asynccontextmanager
+async def lifespan(app):
+    await _init_db()
+    yield
+
+
+mcp = FastMCP("digitalhome-edge", lifespan=lifespan)
 
 
 # ── Node-RED ──────────────────────────────────────────────────────────────────
@@ -123,8 +185,81 @@ async def cloud_patch(path: str, payload: dict) -> dict:
         return r.json()
 
 
+# ── Knowledge base ───────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def kb_search(query: str, type: str = "") -> list:
+    """
+    Full-text search the shared knowledge base.
+    query: search terms, e.g. 'homematic dimmer level'
+    type: optional filter — 'practice', 'limitation', 'device_note', 'automation', 'incident'
+    Call this before attempting any device action or automation.
+    Returns list of matching knowledge entries (id, type, topic, content, tags, source_agent, created_at).
+    """
+    sql = (
+        "SELECT k.id, k.type, k.topic, k.content, k.tags, k.source_agent, k.created_at "
+        "FROM knowledge_fts "
+        "JOIN knowledge k ON knowledge_fts.rowid = k.id "
+        "WHERE knowledge_fts MATCH ?"
+    )
+    params: list = [query]
+    if type:
+        sql += " AND k.type = ?"
+        params.append(type)
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+@mcp.tool()
+async def kb_add(type: str, topic: str, content: str, tags: str = "") -> dict:
+    """
+    Write a new entry to the shared knowledge base.
+    type: 'practice' | 'limitation' | 'device_note' | 'automation' | 'incident'
+    topic: short subject tag, e.g. 'homematic', 'hue', 'heating'
+    content: full description of what was discovered
+    tags: optional comma-separated extra tags
+    Call this when you discover a device quirk, working pattern, or failure mode.
+    """
+    valid_types = {"practice", "limitation", "device_note", "automation", "incident"}
+    if type not in valid_types:
+        raise ValueError(f"type must be one of {sorted(valid_types)}")
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO knowledge (type, topic, content, tags, source_agent) VALUES (?, ?, ?, ?, ?)",
+            (type, topic, content, tags or None, "claude"),
+        )
+        await db.commit()
+        return {"id": cur.lastrowid, "status": "added"}
+
+
+@mcp.tool()
+async def agent_log_write(action: str, tool_called: str, result: str, outcome: str) -> dict:
+    """
+    Append an entry to the agent audit log.
+    action: human-readable description of what was attempted
+    tool_called: MCP tool name used, e.g. 'nodered_trigger'
+    result: JSON or text result received
+    outcome: 'success' | 'failure' | 'partial'
+    Call this after every significant action so other agents can learn from outcomes.
+    """
+    valid_outcomes = {"success", "failure", "partial"}
+    if outcome not in valid_outcomes:
+        raise ValueError(f"outcome must be one of {sorted(valid_outcomes)}")
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO agent_log (agent_id, action, tool_called, result, outcome) VALUES (?, ?, ?, ?, ?)",
+            ("claude", action, tool_called, result, outcome),
+        )
+        await db.commit()
+        return {"id": cur.lastrowid, "status": "logged"}
+
+
 # ── entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    import uvicorn
     # SSE transport — Claude connects via HTTP, works locally and over LAN
-    mcp.run(transport="sse")
+    uvicorn.run(mcp.sse_app(), host="0.0.0.0", port=8000)

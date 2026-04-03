@@ -30,12 +30,25 @@ docs/         Architecture and agent guidance
 
 ## Sensitive data
 
-- `.env` files are gitignored — never commit them
-- Use `.env.example` as the template
-- Real `.env` lives at `/home/dhc-svc/mcp-server/.env` on the server
-- Device IPs are local-only config; keep them out of committed files
+- `digitalhome.edge.config.cache` is gitignored — it holds all local secrets
+  (device IPs, API keys, DB path). See `digitalhome.edge.config.cache.example`
+  for the structure. Created automatically on first server startup.
+- `.env` is kept for systemd/process-level overrides only; config cache takes
+  precedence at runtime.
 - The SQLite database (`*.db`) is gitignored — lives on the server at
   `/home/dhc-svc/digitalhome-edge/db/digitalhome.db`
+- Never put device IPs, API keys, or credentials in committed files.
+
+## Local config cache (`digitalhome.edge.config.cache`)
+
+The MCP server writes this JSON file on first startup (seeded from `.env` or
+hardcoded defaults). Operators edit it directly for local configuration.
+Eventually `digitalhome.cloud` will push config updates into this file.
+
+To bootstrap a new server:
+1. Copy `digitalhome.edge.config.cache.example` → `digitalhome.edge.config.cache`
+2. Fill in `cloud.api_key`, `instance.id`, `instance.name`
+3. Start the MCP server — it reads the cache, skips rewriting it
 
 ## MCP server (`mcp-server/server.py`)
 
@@ -43,7 +56,7 @@ docs/         Architecture and agent guidance
 - Framework: FastMCP (`mcp` package)
 - Transport: SSE on `:8000`
 - Runs as: `dhc-svc` via `mcp-server.service`
-- Config comes from env vars loaded from `.env` — no hardcoded IPs or keys
+- Config loaded from `digitalhome.edge.config.cache` (JSON) — not from env vars directly
 - Tools talk to Node-RED via `httpx` — keep tools thin, no business logic in them
 
 ## Node-RED flows (`flows/`)
@@ -89,8 +102,13 @@ If it isn't yet, set it up with:
 sudo -u dhc-svc git clone <repo-url> /home/dhc-svc/digitalhome-edge
 ```
 
+## Web UX
+
+Operational UI (device control, scenes, sensors) → **Node-RED Dashboard v2**
+(`@flowfuse/node-red-dashboard` palette), served at `:1880/ui`. No separate
+frontend server needed. Install the palette in Node-RED, then build dashboard
+tabs alongside the flows.
+
 ## What's not done yet (open items)
 
-See `SPEC.md` → Open Items section. The DB tools (`kb_search`, `kb_add`,
-`agent_log_write`) are not yet implemented in the MCP server — that's the next
-task. The SQLite schema also needs to be written and initialised on the server.
+See `SPEC.md` → Open Items section.

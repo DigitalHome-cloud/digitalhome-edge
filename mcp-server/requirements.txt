@@ -1,3 +1,4 @@
 mcp>=1.27.0
 httpx>=0.28.0
 python-dotenv>=1.2.0
+aiosqlite>=0.21.0
