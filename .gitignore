@@ -1,3 +1,21 @@
+# Secrets and local config
+.env
+.env.*
+!.env.example
+
+# SQLite databases (live on server, not in repo)
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
 # Logs
 logs
 *.log
