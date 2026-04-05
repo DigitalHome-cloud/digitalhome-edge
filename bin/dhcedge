@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# dhcedge — manage digitalhome.edge services
+#
+# Usage:
+#   dhcedge status              Show service status
+#   dhcedge start               Start Node-RED and MCP server
+#   dhcedge stop                Stop Node-RED and MCP server
+#   dhcedge restart             Restart both services
+#   dhcedge logs [service]      Tail logs (nodered|mcp-server|all, default: all)
+#   dhcedge update-hosts        Generate /etc/hosts entries from config cache
+#   dhcedge show-config         Show config cache (secrets redacted)
+
+set -euo pipefail
+
+SERVICES=(nodered mcp-server)
+CONFIG_CACHE="/home/dhc-svc/digitalhome.edge.config.cache"
+HOSTS_MARKER_BEGIN="# >>> digitalhome-edge managed block — do not edit manually >>>"
+HOSTS_MARKER_END="# <<< digitalhome-edge managed block <<<"
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+die()  { echo "ERROR: $*" >&2; exit 1; }
+
+require_sudo() {
+    if [[ $EUID -ne 0 ]]; then
+        die "This command requires sudo. Run: sudo dhcedge $*"
+    fi
+}
+
+read_mode() {
+    local mode_file="/home/dhc-svc/.dhcedge-mode"
+    if [[ -f "$mode_file" ]]; then
+        cat "$mode_file"
+    else
+        echo "unknown"
+    fi
+}
+
+# ── commands ─────────────────────────────────────────────────────────────────
+
+cmd_status() {
+    local mode
+    mode="$(read_mode)"
+    echo "digitalhome.edge  (mode: ${mode})"
+    echo ""
+    for svc in "${SERVICES[@]}"; do
+        local state enabled
+        state="$(systemctl is-active "$svc" 2>/dev/null || true)"
+        enabled="$(systemctl is-enabled "$svc" 2>/dev/null || true)"
+        printf "  %-14s  %s  (boot: %s)\n" "$svc" "$state" "$enabled"
+    done
+}
+
+cmd_start() {
+    require_sudo "$@"
+    echo "Starting digitalhome.edge services..."
+    systemctl start "${SERVICES[@]}"
+    echo "Done."
+    cmd_status
+}
+
+cmd_stop() {
+    require_sudo "$@"
+    echo "Stopping digitalhome.edge services..."
+    systemctl stop "${SERVICES[@]}"
+    echo "Done."
+    cmd_status
+}
+
+cmd_restart() {
+    require_sudo "$@"
+    echo "Restarting digitalhome.edge services..."
+    systemctl restart "${SERVICES[@]}"
+    echo "Done."
+    cmd_status
+}
+
+cmd_logs() {
+    local target="${1:-all}"
+    case "$target" in
+        nodered|mcp-server)
+            journalctl -u "$target" -f --no-hostname
+            ;;
+        all)
+            journalctl -u nodered -u mcp-server -f --no-hostname
+            ;;
+        *)
+            die "Unknown service: $target (use nodered, mcp-server, or all)"
+            ;;
+    esac
+}
+
+cmd_update_hosts() {
+    require_sudo "update-hosts"
+    command -v python3 &>/dev/null || die "python3 is required but not found."
+    [[ -f "$CONFIG_CACHE" ]] || die "Config cache not found: ${CONFIG_CACHE}\nRun install.sh first or create it from the example."
+
+    # generate host entries from devices in config cache
+    local entries
+    entries=$(python3 -c "
+import json, sys
+with open('${CONFIG_CACHE}') as f:
+    cfg = json.load(f)
+devices = cfg.get('devices', {})
+for hostname, info in devices.items():
+    ip = info.get('ip', '')
+    if ip:
+        print(f'{ip}    {hostname}')
+")
+
+    # always include self-reference
+    local block
+    block="${HOSTS_MARKER_BEGIN}"$'\n'
+    block+="127.0.0.1       digitalhome-edge"$'\n'
+    if [[ -n "$entries" ]]; then
+        block+="${entries}"$'\n'
+    else
+        echo "WARN: No devices found in config cache. Only self-reference written."
+    fi
+    block+="${HOSTS_MARKER_END}"
+
+    # remove existing managed block (if any) and append new one
+    local hosts_file="/etc/hosts"
+    local tmp
+    tmp=$(mktemp)
+    # delete lines between markers (inclusive)
+    sed "/${HOSTS_MARKER_BEGIN//\//\\/}/,/${HOSTS_MARKER_END//\//\\/}/d" "$hosts_file" > "$tmp"
+    # append new block
+    printf '\n%s\n' "$block" >> "$tmp"
+    cp "$tmp" "$hosts_file"
+    rm -f "$tmp"
+
+    echo "Updated ${hosts_file}:"
+    sed -n "/${HOSTS_MARKER_BEGIN//\//\\/}/,/${HOSTS_MARKER_END//\//\\/}/p" "$hosts_file"
+}
+
+cmd_show_config() {
+    [[ -f "$CONFIG_CACHE" ]] || die "Config cache not found: ${CONFIG_CACHE}"
+
+    python3 -c "
+import json, copy
+with open('${CONFIG_CACHE}') as f:
+    cfg = json.load(f)
+
+def redact(obj):
+    if isinstance(obj, dict):
+        return {k: '***' if k in ('api_key', 'credential_secret') and v else redact(v)
+                for k, v in obj.items()}
+    return obj
+
+print(json.dumps(redact(cfg), indent=2))
+"
+}
+
+cmd_help() {
+    echo "Usage: dhcedge <command>"
+    echo ""
+    echo "Commands:"
+    echo "  status              Show service status"
+    echo "  start               Start all services (requires sudo)"
+    echo "  stop                Stop all services (requires sudo)"
+    echo "  restart             Restart all services (requires sudo)"
+    echo "  logs [service]      Tail logs (nodered|mcp-server|all)"
+    echo "  update-hosts        Generate /etc/hosts from config cache (requires sudo)"
+    echo "  show-config         Show config cache (secrets redacted)"
+    echo "  help                Show this help"
+}
+
+# ── main ─────────────────────────────────────────────────────────────────────
+
+if [[ $# -eq 0 ]]; then
+    cmd_help
+    exit 0
+fi
+
+case "$1" in
+    status)       cmd_status ;;
+    start)        cmd_start "$@" ;;
+    stop)         cmd_stop "$@" ;;
+    restart)      cmd_restart "$@" ;;
+    logs)         shift; cmd_logs "${1:-all}" ;;
+    update-hosts) cmd_update_hosts ;;
+    show-config)  cmd_show_config ;;
+    help|-h|--help) cmd_help ;;
+    *) die "Unknown command: $1 (run 'dhcedge help')" ;;
+esac

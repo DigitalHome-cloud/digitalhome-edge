@@ -29,7 +29,11 @@ The script is idempotent — safe to re-run after upgrades or partial failures.
 | MCP server | Standalone copy at `/home/dhc-svc/mcp-server/`, Python venv created, dependencies installed |
 | Database | Directory `/home/dhc-svc/digitalhome-edge/db/` created; schema applied by MCP server on first startup |
 | Config cache | `digitalhome.edge.config.cache` created at `/home/dhc-svc/` from the example file |
-| Systemd | `nodered.service` + `mcp-server.service` installed, enabled, and started |
+| Credential secret | Generated and stored in config cache; set in Node-RED `settings.js` |
+| Node-RED Projects | Enabled in `settings.js` for built-in git UI + credential encryption |
+| DNS hostnames | `/etc/hosts` updated with device hostnames from config cache |
+| dhcedge CLI | Installed to `/usr/local/bin/dhcedge` |
+| Systemd | `nodered.service` + `mcp-server.service` installed (prod: enabled+started, stage: disabled+stopped) |
 | Firewall | `ufw` enabled; ports 22, 1880, 8000 opened |
 
 ## After install — required manual steps
@@ -58,7 +62,19 @@ sudo systemctl restart mcp-server
 4. Copy the returned `username` (this is the API key)
 5. Store it in the config cache under `hue.api_key` (add the key if not present)
 
-### 3. Install Node-RED Dashboard v2
+### 3. Create the Node-RED project
+
+With Projects enabled, Node-RED shows a first-run wizard on first access.
+
+1. Open `http://192.168.1.10:1880`
+2. The wizard prompts you to create a project
+3. Name it `digitalhome-flows`
+4. Optionally configure a git remote for backup
+
+Flows are stored at `/home/dhc-svc/.node-red/projects/digitalhome-flows/`.
+Credentials are encrypted in `flows_cred.json` (never committed to git).
+
+### 4. Install Node-RED Dashboard v2
 
 The operational web UI requires the `@flowfuse/node-red-dashboard` palette.
 It is not installed automatically because it requires Node-RED to be running.
@@ -67,7 +83,7 @@ It is not installed automatically because it requires Node-RED to be running.
 2. Hamburger menu → **Manage palette** → **Install**
 3. Search `@flowfuse/node-red-dashboard` → Install
 
-### 4. Connect Claude to the MCP server
+### 5. Connect Claude to the MCP server
 
 Add to Claude Desktop config (`claude_desktop_config.json`):
 
@@ -137,8 +153,43 @@ sudo bash /home/dhc-svc/digitalhome-edge/install.sh
 │   ├── requirements.txt
 │   ├── .env
 │   └── venv/
-└── .node-red/                      # Node-RED user directory
-    ├── package.json
-    ├── flows.json
-    └── node_modules/
+├── .node-red/                      # Node-RED user directory
+│   ├── settings.js                 # Projects enabled, credentialSecret set
+│   ├── package.json
+│   ├── node_modules/
+│   └── projects/
+│       └── digitalhome-flows/      # Node-RED project (separate git repo)
+│           ├── flows.json          # live flows — hostnames, no IPs
+│           ├── flows_cred.json     # encrypted credentials — never in git
+│           └── package.json
+└── .dhcedge-mode                   # "prod" or "stage"
 ```
+
+## Device hostname conventions
+
+Flows use hostnames instead of IPs. The mapping is managed via `/etc/hosts`,
+generated from the config cache by `dhcedge update-hosts`.
+
+| Hostname | Default IP | Device |
+|---|---|---|
+| `homematic-ccu` | 192.168.1.2 | Homematic CCU |
+| `hue-bridge` | 192.168.1.15 | Philips Hue Bridge |
+| `digitalhome-edge` | 127.0.0.1 | Self-reference (always hardcoded) |
+
+To update after changing device IPs in the config cache:
+
+```bash
+sudo dhcedge update-hosts
+```
+
+## dhcedge CLI
+
+| Command | Sudo | Description |
+|---|---|---|
+| `dhcedge status` | no | Show service status and install mode |
+| `dhcedge start` | yes | Start Node-RED + MCP server |
+| `dhcedge stop` | yes | Stop both services |
+| `dhcedge restart` | yes | Restart both services |
+| `dhcedge logs [service]` | no | Tail logs (nodered, mcp-server, or all) |
+| `dhcedge update-hosts` | yes | Regenerate /etc/hosts from config cache |
+| `dhcedge show-config` | no | Show config cache (secrets redacted) |

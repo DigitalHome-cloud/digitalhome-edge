@@ -1,12 +1,13 @@
 {
-  "version": 1,
+  "version": 2,
   "instance": {
     "id": "digitalhome-edge-01",
     "name": "My Digitalhome",
     "location": "Home"
   },
   "nodered": {
-    "url": "http://localhost:1880"
+    "url": "http://localhost:1880",
+    "credential_secret": ""
   },
   "cloud": {
     "api_url": "https://api.digitalhome.cloud",
@@ -14,5 +15,14 @@
   },
   "db": {
     "path": "/home/dhc-svc/digitalhome-edge/db/digitalhome.db"
+  },
+  "devices": {
+    "homematic-ccu": {
+      "ip": "192.168.1.2"
+    },
+    "hue-bridge": {
+      "ip": "192.168.1.15",
+      "api_key": ""
+    }
   }
 }

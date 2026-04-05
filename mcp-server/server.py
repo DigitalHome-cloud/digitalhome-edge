@@ -18,7 +18,7 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _CONFIG_CACHE = os.path.join(_PROJECT_ROOT, "digitalhome.edge.config.cache")
 
 _CONFIG_DEFAULTS: dict = {
-    "version": 1,
+    "version": 2,
     "instance": {
         "id": "digitalhome-edge-01",
         "name": "My Digitalhome",
@@ -26,6 +26,7 @@ _CONFIG_DEFAULTS: dict = {
     },
     "nodered": {
         "url": os.getenv("NODERED_URL", "http://localhost:1880"),
+        "credential_secret": "",
     },
     "cloud": {
         "api_url": os.getenv("CLOUD_API_URL", "https://api.digitalhome.cloud"),
@@ -33,6 +34,15 @@ _CONFIG_DEFAULTS: dict = {
     },
     "db": {
         "path": os.getenv("DB_PATH", "/home/dhc-svc/digitalhome-edge/db/digitalhome.db"),
+    },
+    "devices": {
+        "homematic-ccu": {
+            "ip": "192.168.1.2",
+        },
+        "hue-bridge": {
+            "ip": "192.168.1.15",
+            "api_key": "",
+        },
     },
 }
 
@@ -62,12 +72,25 @@ DB_PATH       = _cfg["db"]["path"]
 
 
 async def _init_db() -> None:
-    """Run schema.sql against the DB — idempotent (all CREATEs use IF NOT EXISTS)."""
+    """Run schema.sql + pending migrations against the DB."""
     schema_path = os.path.join(os.path.dirname(__file__), "..", "db", "schema.sql")
+    migrations_dir = os.path.join(os.path.dirname(__file__), "..", "db", "migrations")
     with open(schema_path) as f:
         schema = f.read()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(schema)
+        # Run migrations — each ALTER is wrapped in try/except to be idempotent
+        if os.path.isdir(migrations_dir):
+            for mig in sorted(os.listdir(migrations_dir)):
+                if mig.endswith(".sql"):
+                    with open(os.path.join(migrations_dir, mig)) as f:
+                        for stmt in f.read().split(";"):
+                            stmt = stmt.strip()
+                            if stmt:
+                                try:
+                                    await db.execute(stmt)
+                                except Exception:
+                                    pass  # column already exists
         await db.commit()
 
 
@@ -255,6 +278,65 @@ async def agent_log_write(action: str, tool_called: str, result: str, outcome: s
         )
         await db.commit()
         return {"id": cur.lastrowid, "status": "logged"}
+
+
+# ── Device inventory ─────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def device_list(
+    room: str = "",
+    dhc_class: str = "",
+    design_view: str = "",
+    capability: str = "",
+    protocol: str = "",
+) -> list:
+    """
+    Query the device inventory. All filters are optional, combine as needed.
+    dhc_class: DHC ontology class — 'Light', 'Switch', 'Thermostat', 'Sensor',
+               'Actor', 'Controller', 'Gateway', 'Socket', 'Heater'
+    design_view: DHC design view — 'electrical', 'heating', 'network', 'automation'
+    capability: device capability — 'sensor', 'actor', 'controller'
+    protocol: communication protocol — 'homematic' or 'hue'
+    room: room name — e.g. 'living-room', 'kitchen', 'bedroom'
+    Returns list of device dicts with all columns.
+    """
+    sql = "SELECT * FROM device WHERE 1=1"
+    params: list = []
+    if room:
+        sql += " AND room = ?"
+        params.append(room)
+    if dhc_class:
+        sql += " AND dhc_class = ?"
+        params.append(dhc_class)
+    if design_view:
+        sql += " AND design_view = ?"
+        params.append(design_view)
+    if capability:
+        sql += " AND capability LIKE ?"
+        params.append(f"%{capability}%")
+    if protocol:
+        sql += " AND protocol = ?"
+        params.append(protocol)
+    sql += " ORDER BY design_view, dhc_class, name"
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+@mcp.tool()
+async def device_sync() -> dict:
+    """
+    Trigger full device discovery from CCU + Hue Bridge.
+    Calls Node-RED POST /api/devices/sync which reads both sources,
+    maps devices to DHC ontology classes, and writes to the SQLite device table.
+    Returns sync result with device counts per source.
+    """
+    async with httpx.AsyncClient() as c:
+        r = await c.post(f"{NODERED_URL}/api/devices/sync", json={}, timeout=30)
+        r.raise_for_status()
+        return r.json() if r.content else {"status": "ok"}
 
 
 # ── entrypoint ────────────────────────────────────────────────────────────────

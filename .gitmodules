@@ -1,0 +1,3 @@
+[submodule "flows/digitalhome-flows"]
+	path = flows/digitalhome-flows
+	url = https://github.com/DigitalHome-cloud/digitalhome-edge-nodered-flows.git

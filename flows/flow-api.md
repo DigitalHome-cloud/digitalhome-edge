@@ -50,6 +50,20 @@ The MCP server calls these via `nodered_query()` (GET) and `nodered_trigger()` (
 
 ---
 
+## Devices (inventory)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/devices` | List all devices from SQLite inventory |
+| GET | `/api/devices/:class` | Filter by DHC T-Box class (e.g. `Light`, `Thermostat`, `Sensor`) |
+| POST | `/api/devices/sync` | Discover devices from CCU + Hue, UPSERT into SQLite |
+
+`/api/devices/sync` reads CCU XML-API `statelist.cgi` and Hue REST `/lights`,
+maps each device to DHC ontology classes (`dhc_class`, `design_view`, `capability`),
+and writes to the `device` table. Returns `{synced: {ccu: N, hue: M, total: N+M}}`.
+
+---
+
 ## Cloud Sync
 
 | Method | Endpoint | Description |

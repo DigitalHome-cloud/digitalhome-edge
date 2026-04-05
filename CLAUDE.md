@@ -12,11 +12,11 @@ making any changes.
 
 **Node-RED owns all devices. The MCP server never talks to devices directly.**
 
-- Homematic CCU (192.168.1.2) and Philips Hue Bridge (192.168.1.15) are only
+- Homematic CCU (`homematic-ccu`) and Philips Hue Bridge (`hue-bridge`) are only
   accessed through Node-RED flows.
 - The MCP server calls Node-RED HTTP-in endpoints (`/api/*`) exclusively.
 - Claude calls MCP tools. MCP calls Node-RED. Node-RED calls devices.
-- If you find yourself writing code that talks to 192.168.1.2 or 192.168.1.15
+- If you find yourself writing code that talks directly to device IPs
   from the MCP server — stop. That logic belongs in a Node-RED flow.
 
 ## Repository layout
@@ -25,18 +25,32 @@ making any changes.
 mcp-server/   Python FastMCP server — tools only, no device logic
 flows/        Node-RED flow exports + HTTP-in endpoint catalogue
 db/           SQLite schema and migrations
+bin/          CLI utilities (dhcedge)
 docs/         Architecture and agent guidance
 ```
+
+## Device hostnames
+
+Flows use DNS hostnames, never hardcoded IPs. The mapping is in the config
+cache under `devices` and written to `/etc/hosts` by `dhcedge update-hosts`.
+
+| Hostname | Default IP | Device |
+|---|---|---|
+| `homematic-ccu` | 192.168.1.2 | Homematic CCU |
+| `hue-bridge` | 192.168.1.15 | Philips Hue Bridge |
+| `digitalhome-edge` | 127.0.0.1 | Self-reference (hardcoded) |
 
 ## Sensitive data
 
 - `digitalhome.edge.config.cache` is gitignored — it holds all local secrets
-  (device IPs, API keys, DB path). See `digitalhome.edge.config.cache.example`
-  for the structure. Created automatically on first server startup.
+  (device IPs, API keys, credential secret, DB path).
+  See `digitalhome.edge.config.cache.example` for the v2 schema.
 - `.env` is kept for systemd/process-level overrides only; config cache takes
   precedence at runtime.
 - The SQLite database (`*.db`) is gitignored — lives on the server at
   `/home/dhc-svc/digitalhome-edge/db/digitalhome.db`
+- Node-RED credentials are encrypted in `flows_cred.json` (inside the
+  Node-RED project directory, never committed to this repo).
 - Never put device IPs, API keys, or credentials in committed files.
 
 ## Local config cache (`digitalhome.edge.config.cache`)
@@ -62,12 +76,17 @@ To bootstrap a new server:
 ## Node-RED flows (`flows/`)
 
 - Node-RED runs as `dhc-svc` on `:1880`, userDir `/home/dhc-svc/.node-red`
+- **Node-RED Projects** is enabled — flows live in a separate git repo at
+  `/home/dhc-svc/.node-red/projects/digitalhome-flows/`
+- Credentials are encrypted in `flows_cred.json` (credential secret stored
+  in config cache at `nodered.credential_secret`)
 - Palettes installed: `node-red-contrib-ccu`, `node-red-contrib-huemagic`
-- Export flows to `flows/exported/` after every significant change:
-  Node-RED menu → Export → All flows → Download JSON → commit here
+- Periodic snapshots go to `flows/exported/` in this repo for backup/review
 - `flows/flow-api.md` is the **source of truth** for HTTP-in endpoints.
   Keep it updated whenever you add or change an endpoint.
 - HTTP-in endpoints follow the convention in SPEC.md (`/api/state/all`, etc.)
+- **Use hostnames** (`homematic-ccu`, `hue-bridge`) in all flow config nodes,
+  never hardcoded IPs
 
 ## Database (`db/`)
 
@@ -99,9 +118,18 @@ sudo systemctl restart nodered      # if flows changed
 The repo should be cloned at `/home/dhc-svc/digitalhome-edge/` on the server.
 For a full fresh install (new server), use the install script:
 ```bash
-sudo bash install.sh
+sudo bash install.sh --mode prod    # or --mode stage
 ```
 See `docs/install.md` for the full install procedure and post-install steps.
+
+Use `dhcedge` to manage the server:
+```bash
+dhcedge status          # show service state
+sudo dhcedge start      # bring up services
+sudo dhcedge stop       # take down services
+sudo dhcedge update-hosts  # regenerate /etc/hosts from config cache
+dhcedge show-config     # view config (secrets redacted)
+```
 
 ## Web UX
 

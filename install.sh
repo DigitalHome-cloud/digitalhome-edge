@@ -5,11 +5,14 @@
 # Idempotent: safe to re-run after partial failures or upgrades.
 #
 # Usage:
-#   sudo bash install.sh [--repo-url <git-url>]
+#   sudo bash install.sh [--repo-url <git-url>] [--mode prod|stage]
 #
 # Options:
 #   --repo-url   Git URL to clone the repo from (default: auto-detect from
 #                the directory this script lives in, if already cloned)
+#   --mode       Installation mode: "prod" or "stage" (default: prompt)
+#                prod  — services enabled and started automatically
+#                stage — services installed but stopped and disabled by default
 
 set -euo pipefail
 
@@ -33,14 +36,38 @@ VENV="${MCP_DIR}/venv"
 NODE_RED_USER_DIR="${DHC_HOME}/.node-red"
 
 REPO_URL=""
+INSTALL_MODE=""
 
 # parse args
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --repo-url) REPO_URL="$2"; shift 2 ;;
+        --mode)     INSTALL_MODE="$2"; shift 2 ;;
         *) die "Unknown argument: $1" ;;
     esac
 done
+
+# prompt for mode if not supplied
+if [[ -z "$INSTALL_MODE" ]]; then
+    echo ""
+    echo "Select installation mode:"
+    echo "  1) prod  — services enabled and started automatically"
+    echo "  2) stage — services installed but stopped (use dhcedge to start)"
+    echo ""
+    read -rp "Enter 1 or 2 [default: 1]: " mode_choice
+    case "${mode_choice:-1}" in
+        1|prod)  INSTALL_MODE="prod"  ;;
+        2|stage) INSTALL_MODE="stage" ;;
+        *) die "Invalid choice: ${mode_choice}" ;;
+    esac
+fi
+
+case "$INSTALL_MODE" in
+    prod|stage) ;;
+    *) die "Invalid mode '${INSTALL_MODE}'. Use 'prod' or 'stage'." ;;
+esac
+
+log "Installation mode: ${INSTALL_MODE}"
 
 # if no --repo-url, detect from the script's own location
 if [[ -z "$REPO_URL" ]]; then
@@ -59,7 +86,7 @@ log "Installing system packages..."
 apt-get update -qq
 apt-get install -y --no-install-recommends \
     python3.12 python3.12-venv python3-pip \
-    nodejs npm \
+    nodejs \
     git curl ufw
 
 # ── 2. service account ────────────────────────────────────────────────────────
@@ -68,6 +95,8 @@ log "Creating service account ${DHC_USER}..."
 if ! id "${DHC_USER}" &>/dev/null; then
     useradd --system --create-home --shell /usr/sbin/nologin "${DHC_USER}"
 fi
+# ensure home is traversable so dhcedge can read .dhcedge-mode
+chmod 755 "${DHC_HOME}"
 
 # ── 3. Node-RED ───────────────────────────────────────────────────────────────
 
@@ -143,7 +172,57 @@ else
     log "  Config cache already exists — skipping."
 fi
 
-# ── 8. systemd units ──────────────────────────────────────────────────────────
+# ── 8. Node-RED credential secret ─────────────────────────────────────────────
+
+log "Configuring Node-RED credential secret..."
+CRED_SECRET=$(python3 -c "
+import json, sys
+with open('${CONFIG_CACHE}') as f:
+    cfg = json.load(f)
+print(cfg.get('nodered', {}).get('credential_secret', ''))
+")
+
+if [[ -z "$CRED_SECRET" ]]; then
+    CRED_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+    python3 -c "
+import json
+with open('${CONFIG_CACHE}', 'r+') as f:
+    cfg = json.load(f)
+    cfg.setdefault('nodered', {})['credential_secret'] = '${CRED_SECRET}'
+    f.seek(0); json.dump(cfg, f, indent=2); f.truncate()
+"
+    log "  Generated and stored credential secret in config cache."
+else
+    log "  Credential secret already set in config cache."
+fi
+
+# ── 9. Node-RED Projects configuration ───────────────────────────────────────
+
+log "Configuring Node-RED settings.js..."
+SETTINGS_JS="${NODE_RED_USER_DIR}/settings.js"
+
+if [[ -f "$SETTINGS_JS" ]]; then
+    # enable Projects feature
+    sed -i 's/enabled: false,/enabled: true,/' "$SETTINGS_JS"
+
+    # set credentialSecret
+    if grep -q '//credentialSecret:' "$SETTINGS_JS"; then
+        sed -i "s|//credentialSecret: \"a-secret-key\",|credentialSecret: \"${CRED_SECRET}\",|" "$SETTINGS_JS"
+    elif grep -q 'credentialSecret:' "$SETTINGS_JS"; then
+        sed -i "s|credentialSecret: \"[^\"]*\",|credentialSecret: \"${CRED_SECRET}\",|" "$SETTINGS_JS"
+    else
+        # settings.js exists but no credentialSecret line — insert before module.exports closing
+        sed -i "/module.exports/a\\    credentialSecret: \"${CRED_SECRET}\"," "$SETTINGS_JS"
+    fi
+    log "  Projects enabled, credential secret set."
+else
+    log "  WARN: settings.js not found — Node-RED will generate it on first start."
+    log "  Re-run install.sh after first start to configure Projects."
+fi
+
+chown -R "${DHC_USER}:${DHC_USER}" "${NODE_RED_USER_DIR}"
+
+# ── 10. systemd units ─────────────────────────────────────────────────────────
 
 log "Installing systemd service units..."
 
@@ -187,10 +266,42 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable nodered mcp-server
-systemctl restart nodered mcp-server
 
-# ── 9. firewall ───────────────────────────────────────────────────────────────
+if [[ "$INSTALL_MODE" == "prod" ]]; then
+    log "Prod mode: enabling and starting services..."
+    systemctl enable nodered mcp-server
+    systemctl restart nodered mcp-server
+else
+    log "Stage mode: services installed but NOT started."
+    log "  Use 'dhcedge start' to bring them up when needed."
+    systemctl disable nodered mcp-server 2>/dev/null || true
+    systemctl stop nodered mcp-server 2>/dev/null || true
+fi
+
+# ── 11. dhcedge CLI utility ───────────────────────────────────────────────────
+
+log "Installing dhcedge utility..."
+SCRIPT_SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_SOURCE_DIR}/bin/dhcedge" ]]; then
+    cp "${SCRIPT_SOURCE_DIR}/bin/dhcedge" /usr/local/bin/dhcedge
+elif [[ -f "${REPO_DIR}/bin/dhcedge" ]]; then
+    cp "${REPO_DIR}/bin/dhcedge" /usr/local/bin/dhcedge
+else
+    die "Cannot find bin/dhcedge in source or cloned repo."
+fi
+chmod +x /usr/local/bin/dhcedge
+
+# persist the install mode so dhcedge can read it
+echo "${INSTALL_MODE}" > "${DHC_HOME}/.dhcedge-mode"
+chown "${DHC_USER}:${DHC_USER}" "${DHC_HOME}/.dhcedge-mode"
+chmod 644 "${DHC_HOME}/.dhcedge-mode"
+
+# ── 12. /etc/hosts DNS entries ────────────────────────────────────────────────
+
+log "Updating /etc/hosts with device hostnames..."
+/usr/local/bin/dhcedge update-hosts
+
+# ── 13. firewall ─────────────────────────────────────────────────────────────
 
 log "Configuring firewall (ufw)..."
 ufw --force enable
@@ -201,7 +312,7 @@ ufw allow 8000/tcp comment 'MCP server'
 # ── done ──────────────────────────────────────────────────────────────────────
 
 log ""
-log "Installation complete."
+log "Installation complete (mode: ${INSTALL_MODE})."
 log ""
 log "Next steps:"
 log "  1. Edit ${CONFIG_CACHE}"
@@ -211,9 +322,17 @@ log "  2. Register Hue API key:"
 log "     http://192.168.1.15/debug/clip.html"
 log "  3. Install Node-RED Dashboard v2 in the Node-RED editor:"
 log "     http://<server-ip>:1880  → Manage palette → @flowfuse/node-red-dashboard"
-log "  4. Connect Claude to the MCP server:"
+log "  4. Create your first Node-RED project:"
+log "     http://<server-ip>:1880 → Name it 'digitalhome-flows'"
+log "  5. Connect Claude to the MCP server:"
 log "     http://<server-ip>:8000/sse"
 log ""
-log "Services:"
-systemctl is-active --quiet nodered    && log "  nodered     running" || log "  nodered     FAILED"
-systemctl is-active --quiet mcp-server && log "  mcp-server  running" || log "  mcp-server  FAILED"
+if [[ "$INSTALL_MODE" == "stage" ]]; then
+    log "Stage mode — services are DOWN. Use 'dhcedge start' to bring them up."
+else
+    log "Services:"
+    systemctl is-active --quiet nodered    && log "  nodered     running" || log "  nodered     FAILED"
+    systemctl is-active --quiet mcp-server && log "  mcp-server  running" || log "  mcp-server  FAILED"
+fi
+log ""
+log "Use 'dhcedge status' to check service state at any time."

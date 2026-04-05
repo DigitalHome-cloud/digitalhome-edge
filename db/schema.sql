@@ -71,7 +71,14 @@ CREATE TABLE IF NOT EXISTS device (
     protocol     TEXT NOT NULL CHECK(protocol IN ('homematic', 'hue', 'other')),
     address      TEXT NOT NULL,         -- CCU serial e.g. 'LEQ1234567:1', or Hue light ID
     room         TEXT,                  -- e.g. 'living-room', 'bedroom', 'kitchen'
-    type         TEXT,                  -- e.g. 'light', 'switch', 'thermostat', 'shutter'
+    type         TEXT,                  -- simple category: 'light', 'switch', 'thermostat', 'shutter'
+    dhc_class    TEXT,                  -- DHC T-Box class: 'Light', 'Switch', 'Thermostat', 'Sensor', 'Actor', 'Controller', 'Socket', 'Gateway'
+    design_view  TEXT,                  -- DHC design view: 'electrical', 'heating', 'network', 'automation'
+    capability   TEXT,                  -- 'sensor', 'actor', 'controller' (comma-separated if multiple)
+    model        TEXT,                  -- hardware model: 'HM-CC-RT-DN', 'LTG002', etc.
+    manufacturer TEXT,                  -- 'Homematic', 'Philips', 'Innr', etc.
+    ccu_ise_id   TEXT,                  -- CCU XML-API ise_id for cross-reference
+    hue_unique_id TEXT,                 -- Hue Zigbee unique ID
     last_seen    TEXT,
     notes        TEXT
 );
