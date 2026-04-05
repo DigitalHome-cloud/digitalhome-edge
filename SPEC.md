@@ -6,8 +6,14 @@
 `digitalhome.cloud` (AWS REST backend) with local smarthome hardware, and runs a Claude
 agent that acts as an autonomous digitalhome admin.
 
-This repository contains the **application layer** running on `DLAB5-M92P-01`
-(ThinkCentre M92p, Ubuntu 24.04.2 LTS headless, `192.168.1.10`).
+This repository contains the **application layer** for the local edge server.
+
+| Environment | Server | Branch |
+|-------------|--------|--------|
+| **Stage** | DLAB5-W541-01 (ThinkPad W541, Ubuntu 24.04.2 LTS) | `stage` |
+| **Production** | DLAB5-M92P-01 (ThinkCentre M92p, Ubuntu 24.04.2 LTS headless) | `main` |
+
+Deployment is pipeline-based via GitHub — each server tracks its branch.
 
 ---
 
@@ -76,8 +82,9 @@ digitalhome.cloud (AWS REST)
 | Philips Hue Bridge | REST | 192.168.1.15 |
 | This edge server | — | 192.168.1.10 |
 
-Sensitive values (API keys, credentials) live in `/home/dhc-svc/mcp-server/.env` on the
-server — never committed to this repo. Use `.env.example` as the template.
+Sensitive values (API keys, credentials) live only in `digitalhome.edge.config.cache`
+(gitignored) on the server — never committed to this repo. Secrets will be managed
+centrally via `digitalhome.cloud` or configured during setup (`install.sh`).
 
 ---
 
@@ -86,20 +93,21 @@ server — never committed to this repo. Use `.env.example` as the template.
 ```
 digitalhome-edge/
   mcp-server/
-    server.py          ← FastMCP server, 7 tools
+    server.py          ← FastMCP server, 12 tools
     requirements.txt
-    .env.example
   flows/
-    exported/          ← Node-RED flow JSON exports (committed)
+    digitalhome-flows/ ← git submodule (Node-RED project)
     flow-api.md        ← HTTP-in endpoint catalogue (source of truth)
   db/
-    schema.sql         ← SQLite schema
+    schema.sql         ← SQLite schema (device table with DHC ontology columns)
     migrations/        ← numbered migration files (001_*.sql, ...)
+  bin/
+    dhcedge            ← CLI for service management
   docs/
-    architecture.md    ← detailed diagrams
-    agent-guide.md     ← how Claude should reason about this system
+    install.md         ← installation procedure
   SPEC.md              ← this file
   CLAUDE.md            ← Claude Code instructions
+  install.sh           ← automated installer
 ```
 
 ---
@@ -120,6 +128,9 @@ the MCP server uses for device control. All endpoints return JSON.
 - `POST /api/heating/{room}/set`  — body: `{"temp": 20.5}`
 - `GET  /api/heating/status`      — all thermostat readings
 - `POST /api/cloud/sync`          — push state snapshot to digitalhome.cloud
+- `GET  /api/devices`             — list all devices from SQLite inventory
+- `GET  /api/devices/{class}`     — filter by DHC T-Box class (Light, Thermostat, etc.)
+- `POST /api/devices/sync`        — discover devices from CCU + Hue, UPSERT into SQLite
 
 See `flows/flow-api.md` for the full catalogue as flows are built out.
 
@@ -148,10 +159,19 @@ Example entries:
 id, agent_id, action, tool_called, payload, result, outcome, created_at
 ```
 
-**`device`** — canonical device registry
+**`device`** — canonical device registry (DHC ontology-tagged)
 ```
-id, name, protocol, address, room, type, last_seen, notes
+id, name, protocol, address, room, type,
+dhc_class, design_view, capability, model, manufacturer,
+ccu_ise_id, hue_unique_id, last_seen, notes
 ```
+
+DHC T-Box classes: `Light`, `Switch`, `Socket`, `Thermostat`, `Heater`,
+`Sensor`, `Actor`, `Controller`, `Gateway`
+
+Design views: `electrical`, `heating`, `network`, `automation`
+
+Capabilities: `sensor`, `actor`, `controller` (comma-separated if multiple)
 
 ---
 
@@ -169,6 +189,8 @@ id, name, protocol, address, room, type, last_seen, notes
 | `kb_search(query, type?)` | Full-text search the knowledge base |
 | `kb_add(type, topic, content, tags?)` | Write a new knowledge entry |
 | `agent_log_write(action, tool, result, outcome)` | Log an agent decision |
+| `device_list(room?, dhc_class?, design_view?, capability?, protocol?)` | Query device inventory with ontology filters |
+| `device_sync()` | Trigger full CCU + Hue device discovery into SQLite |
 
 ---
 
@@ -226,12 +248,17 @@ Firewall: `ufw` — only ports 22, 1880, 8000 open.
 
 ## Open Items
 
-- [ ] Hue API key — register at `http://192.168.1.15/debug/clip.html`, add to `digitalhome.edge.config.cache`
+- [x] Hue API key — registered and stored in `digitalhome.edge.config.cache`
 - [ ] digitalhome.cloud URL + API key — add to `digitalhome.edge.config.cache` (cloud-sync will automate this later)
-- [ ] Build initial Node-RED flows for Homematic + Hue
+- [x] Build initial Node-RED flows for Homematic + Hue
 - [x] Implement `kb_search` / `kb_add` / `agent_log_write` MCP tools
 - [x] Create SQLite schema (DB auto-initialised on first server startup)
+- [x] Write `flows/flow-api.md` endpoint catalogue
+- [x] Install Node-RED Dashboard v2 (`@flowfuse/node-red-dashboard`) for operational web UX at `:1880/ui`
+- [x] Unified device inventory — 57 devices (46 CCU + 11 Hue) tagged with DHC T-Box classes
+- [x] `device_list` / `device_sync` MCP tools
+- [x] Devices dashboard page with inventory overview and detailed table
 - [ ] Export first flow snapshot to `flows/exported/`
-- [ ] Write `flows/flow-api.md` endpoint catalogue
-- [ ] Install Node-RED Dashboard v2 (`@flowfuse/node-red-dashboard`) for operational web UX at `:1880/ui`
 - [ ] Implement cloud config sync from `digitalhome.cloud` → `digitalhome.edge.config.cache`
+- [ ] Assign room names to devices (currently all null)
+- [ ] Pipeline-based deployment: stage branch → DLAB5-W541-01, main → DLAB5-M92P-01
