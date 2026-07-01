@@ -32,19 +32,26 @@ module.exports = function (RED) {
 
         node.status({ fill: "green", shape: "dot", text: node.toolName });
 
-        // Register this node's handler with the config node's dispatcher.
-        // When a matching tools/call arrives, the config node calls the
-        // handler which emits the msg down the wire.
-        node.serverCfg.registerTool(node.toolName, (args, mcpMeta) => {
-            const msg = {
-                payload: args,
-                mcp:     { ...mcpMeta, toolName: node.toolName }
-            };
-            node.send(msg);
-        });
+        let inputSchema;
+        try {
+            inputSchema = JSON.parse(node.inputSchema || "{}");
+        } catch (err) {
+            node.warn(`invalid inputSchema JSON for ${node.toolName}: ${err.message}`);
+            inputSchema = { type: "object", properties: {} };
+        }
+
+        node.serverCfg.registerTool(
+            { name: node.toolName, description: node.description, inputSchema },
+            (args, mcpMeta) => {
+                node.send({
+                    payload: args,
+                    mcp:     { ...mcpMeta, toolName: node.toolName }
+                });
+            }
+        );
 
         node.on("close", (done) => {
-            // TODO: config node should support deregistration
+            node.serverCfg.unregisterTool(node.toolName);
             done();
         });
     }

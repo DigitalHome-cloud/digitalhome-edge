@@ -1,29 +1,23 @@
-# digitalhome.edge — Docker Compose stack (Phase 1 side-by-side on stage).
+# digitalhome.edge — Docker Compose stack (collapsed to one container).
 #
-# Ports here are intentionally non-standard so this stack can run alongside
-# the existing systemd stack (nodered:1880, mcp-server:8000). At Phase 8
-# cutover, flip to 1880/8443 (or 1880/8000) and retire the old services.
+# The whole edge now runs in one Node-RED container: flows, MCP wire,
+# cloud sync, dashboard, sensor buffer. Both dhc-mcp and dhc-sync palettes
+# are baked into the image at build time from ../contrib/.
 #
-# All services use `network_mode: host` per SLAB5 spec §7 — required for
-# Matter mDNS multicast in later phases, and simplifies MCP <-> Node-RED
-# traffic to plain localhost.
+# Ports on this stack are 1881 (Node-RED editor + dashboard + /api/*)
+# and Node-RED serves MCP under the same port (/mcp/sse + /mcp/messages/*).
+# The 8443 MCP port used by the old separate mcp-server container is gone;
+# once cutover from the old systemd stack happens, this stack takes over 1880.
 #
-# Layout on the host (bootstrap.sh seeds this):
-#   /opt/dhe/
-#     ├── config/        dhe.config.cache  (0600, holds tokens+URLs+DB path)
-#     ├── secrets/       nodered-*, mcp-* (0600 files, one per credential)
-#     ├── node-red-data/ Node-RED userDir (settings.js, flows, projects)
-#     ├── cbox/          cbox.jsonld cache (Phase 3+ populates this)
-#     ├── cache/         catalog.json, config-cache.json (Phase 3+)
-#     ├── timeseries/    SQLite sensor buffer (Phase 5)
-#     ├── db/            SQLite agent memory + device inventory
-#     └── logs/
+# network_mode: host is required for Matter mDNS discovery (Phase 4+); we
+# keep it now so the shape doesn't change at Matter add.
 
 services:
 
   node-red:
     build:
-      context: ./nodered
+      context: ..                       # repo root — needs access to contrib/
+      dockerfile: deploy/nodered/Dockerfile
     image: digitalhome/dhe-nodered:local
     container_name: dhe-nodered
     restart: unless-stopped
@@ -31,6 +25,9 @@ services:
     volumes:
       - /opt/dhe/node-red-data:/data
       - /opt/dhe/secrets:/secrets:ro
+      - /opt/dhe/config:/config:ro
+      - /opt/dhe/cbox:/cbox
+      - /opt/dhe/timeseries:/timeseries
     environment:
       - TZ=Europe/Brussels
     healthcheck:
@@ -38,48 +35,4 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
-
-  mcp-server:
-    build:
-      context: ../mcp-server
-    image: digitalhome/dhe-mcp:local
-    container_name: dhe-mcp
-    restart: unless-stopped
-    network_mode: host
-    depends_on:
-      - node-red
-    volumes:
-      - /opt/dhe/config:/config:ro
-      - /opt/dhe/cbox:/data/cbox
-      - /opt/dhe/cache:/data/cache
-      - /opt/dhe/db:/data/db
-    environment:
-      - DHE_MCP_HOST=0.0.0.0
-      - DHE_MCP_PORT=${DHE_MCP_PORT:-8443}
-      - DHE_CONFIG_CACHE=/config/dhe.config.cache
-      - PYTHONUNBUFFERED=1
-    healthcheck:
-      test: ["CMD-SHELL", "python -c 'import socket,sys; s=socket.socket(); s.settimeout(2); sys.exit(0 if s.connect_ex((\"127.0.0.1\", int(\"${DHE_MCP_PORT:-8443}\"))) == 0 else 1)'"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-
-  sync-agent:
-    build:
-      context: ./sync-agent
-    image: digitalhome/dhe-sync:local
-    container_name: dhe-sync
-    restart: unless-stopped
-    network_mode: host
-    depends_on:
-      - mcp-server
-    volumes:
-      - /opt/dhe/cbox:/data/cbox
-      - /opt/dhe/cache:/data/cache
-      - /opt/dhe/timeseries:/data/timeseries
-      - /opt/dhe/secrets:/secrets:ro
-    environment:
-      - HOME_ID=${HOME_ID:-DE-DEMO}
-      - SYNC_AGENT_HEARTBEAT_S=60
+      start_period: 45s

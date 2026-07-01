@@ -24,14 +24,20 @@ module.exports = function (RED) {
 
         node.status({ fill: "green", shape: "dot", text: node.uri });
 
-        node.serverCfg.registerResource(node.uri, (mcpMeta) => {
-            node.send({
-                payload: null,
-                mcp:     { ...mcpMeta, uri: node.uri, mimeType: node.mimeType }
-            });
-        });
+        node.serverCfg.registerResource(
+            { uri: node.uri, name: node.name_, mimeType: node.mimeType },
+            (mcpMeta) => {
+                node.send({
+                    payload: null,
+                    mcp:     { ...mcpMeta, uri: node.uri, mimeType: node.mimeType }
+                });
+            }
+        );
 
-        node.on("close", (done) => done());
+        node.on("close", (done) => {
+            node.serverCfg.unregisterResource(node.uri);
+            done();
+        });
     }
 
     RED.nodes.registerType("mcp-resource-in", McpResourceInNode);
