@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 digitalhome.edge.config.cache
+.claude
 
 # SQLite databases (live on server, not in repo)
 *.db

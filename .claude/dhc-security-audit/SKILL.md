@@ -19,6 +19,11 @@ You can also invoke this skill mid-design ("would this introduce …?") to press
 
 ## How to run
 
+> **If the target is `digitalhome-edge` (not the cloud platform)**, also load
+> [`EDGE-EXTENSIONS.md`](./EDGE-EXTENSIONS.md). It adds three edge-only domains
+> (MCP surface, Node-RED posture, systemd hardening) and maps cloud domains 2/3/4
+> to their edge equivalents.
+
 1. **Confirm scope with the user.** Ask whether they want a full audit (all eight domains below) or a targeted one ("just dependencies", "just GraphQL `@auth`"). Default to full unless they say otherwise.
 2. **Snapshot the working tree.** Run `git status` and `git log --oneline -5` in the umbrella + each submodule so the report can pin exactly which commit was audited.
 3. **Walk the eight domains** in order, executing the checks listed under each. Record findings as you go — don't try to remember at the end.
