@@ -5,36 +5,67 @@ This file provides guidance to Claude Code when working in this repository.
 ## What this repo is
 
 Application layer for **digitalhome.edge** — the local edge server running on
-`DLAB5-M92P-01` (192.168.1.10). Two specs to read before making changes:
-- `SPEC.md` — what is running today (current-state snapshot).
-- `docs/architecture.md` — the target architecture (SLAB5 spec) the product is migrating toward.
-- `docs/adr/0001-dhe-alignment.md` — locked decisions and phased migration plan.
+`DLAB5-M92P-01` (192.168.1.10). Reading order for context:
+- `SPEC.md` — current-state snapshot.
+- `docs/architecture.md` — target architecture (SLAB5 spec).
+- `docs/adr/0001-dhe-alignment.md` — locked decisions + phased migration plan.
+- `docs/specs/edge-cloud-api.md` — edge ↔ cloud wire spec (OAuth device flow).
+
+## Runtime shape
+
+One Docker container: Node-RED 4.0.9 with the palettes baked in at build time.
+`dhe.service` (systemd oneshot) drives `docker compose up -d/down`. All state
+under `/opt/dhe/`.
+
+- `contrib/dhc-mcp/` — MCP server surface in Node-RED (config node + tool/resource nodes + response node)
+- `contrib/dhc-sync/` — OAuth device flow client + dashboard pairing UI + telemetry loop
 
 ## The golden rule
 
-**Node-RED owns all devices. The MCP server never talks to devices directly.**
+**Node-RED owns all devices. Everything else calls Node-RED.**
 
-- Homematic CCU (`homematic-ccu`) and Philips Hue Bridge (`hue-bridge`) are only
-  accessed through Node-RED flows.
-- The MCP server calls Node-RED HTTP-in endpoints (`/api/*`) exclusively.
-- Claude calls MCP tools. MCP calls Node-RED. Node-RED calls devices.
-- If you find yourself writing code that talks directly to device IPs
-  from the MCP server — stop. That logic belongs in a Node-RED flow.
+- Homematic CCU (`homematic-ccu`) and Philips Hue Bridge (`hue-bridge`) are
+  only accessed through Node-RED flows.
+- The MCP server surface runs *inside* Node-RED via `dhc-mcp` — a `tools/call`
+  arriving at `/mcp/messages/:sessionId` fires an `mcp-tool-in` node in the
+  matching flow. The response goes back via `mcp-response`.
+- Claude calls MCP tools. MCP nodes fire flows. Flows call devices.
+- If you're writing code that talks directly to device IPs from anywhere but
+  a Node-RED flow — stop. That logic belongs in a flow.
 
 ## Repository layout
 
 ```
-mcp-server/   Python FastMCP server — tools only, no device logic
-flows/        Node-RED flow exports + HTTP-in endpoint catalogue
-db/           SQLite schema and migrations
-bin/          CLI utilities (dhcedge)
-docs/         Architecture and agent guidance
+contrib/
+  dhc-mcp/       MCP palette — config node + tool-in/resource-in/response
+  dhc-sync/      OAuth device flow + dashboard pairing UI + telemetry loop
+deploy/
+  docker-compose.yml   single node-red service
+  dhe.service          systemd oneshot
+  bootstrap.sh         seeds /opt/dhe/ layout
+  nodered/
+    Dockerfile         base image + palettes
+    entrypoint.sh      bcrypts secrets → settings.js on first boot
+flows/
+  digitalhome-flows/   git submodule (Node-RED Project)
+  flow-api.md          HTTP-in endpoint catalogue
+db/
+  schema.sql           reserved for future in-container store
+  migrations/
+bin/
+  dhcedge              CLI for the Docker stack
+docs/
+  architecture.md
+  install.md
+  adr/                 architecture decisions
+  audits/              security & quality audits
+  specs/               wire-level specs
 ```
 
 ## Device hostnames
 
-Flows use DNS hostnames, never hardcoded IPs. The mapping is in the config
-cache under `devices` and written to `/etc/hosts` by `dhcedge update-hosts`.
+Flows use DNS hostnames, never hardcoded IPs. Mapping lives in the config
+cache under `devices` and gets written to `/etc/hosts` by `dhcedge update-hosts`.
 
 | Hostname | Default IP | Device |
 |---|---|---|
@@ -44,101 +75,104 @@ cache under `devices` and written to `/etc/hosts` by `dhcedge update-hosts`.
 
 ## Sensitive data
 
-- `digitalhome.edge.config.cache` is gitignored — it holds all local secrets
-  (device IPs, API keys, credential secret, DB path).
-  See `digitalhome.edge.config.cache.example` for the v2 schema.
-- `.env` is kept for systemd/process-level overrides only; config cache takes
-  precedence at runtime.
-- The SQLite database (`*.db`) is gitignored — lives on the server at
-  `/home/dhc-svc/digitalhome-edge/db/digitalhome.db`
-- Node-RED credentials are encrypted in `flows_cred.json` (inside the
-  Node-RED project directory, never committed to this repo).
-- Never put device IPs, API keys, or credentials in committed files.
+- `/opt/dhe/secrets/` — one file per secret (0600 each): `mcp-auth-token`,
+  `nodered-admin-password`, `nodered-http-password`, `nodered-credential-secret`,
+  `device-token`, `edge-id`, `home-id`, `machine-id`. Gitignored root; nothing
+  from this dir belongs in commits.
+- `/opt/dhe/config/dhe.config.cache` — non-secret settings + hue api key.
+  0600. Gitignored.
+- Node-RED credentials are encrypted in `flows_cred.json` under the userDir
+  (never committed; encryption key is in `credential-secret` above).
+- Never put device IPs, API keys, tokens, or passwords in committed files.
+  The `.example` files show the *shape*, not real values.
 
-## Local config cache (`digitalhome.edge.config.cache`)
+## MCP server (in Node-RED, `contrib/dhc-mcp/`)
 
-The MCP server writes this JSON file on first startup (seeded from `.env` or
-hardcoded defaults). Operators edit it directly for local configuration.
-Eventually `digitalhome.cloud` will push config updates into this file.
+- Runtime: Node.js (Node-RED contrib module — no extra process)
+- Transport: SSE at `/mcp/sse`, JSON-RPC POSTs to `/mcp/messages/:sessionId`
+- SDK: `@modelcontextprotocol/sdk` (TypeScript SDK, CJS-compatible)
+- Auth: Bearer token read from `/secrets/mcp-auth-token` at Node-RED startup
+- Tools + resources register from the `mcp-tool-in` / `mcp-resource-in`
+  nodes; response returns via `mcp-response` matched by `callId`
 
-To bootstrap a new server:
-1. Copy `digitalhome.edge.config.cache.example` → `digitalhome.edge.config.cache`
-2. Fill in `cloud.api_key`, `instance.id`, `instance.name`
-3. Start the MCP server — it reads the cache, skips rewriting it
+## Cloud sync (in Node-RED, `contrib/dhc-sync/`)
 
-## MCP server (`mcp-server/server.py`)
-
-- Runtime: Python 3.12, venv at `/home/dhc-svc/mcp-server/venv/`
-- Framework: FastMCP (`mcp` package)
-- Transport: SSE on `:8000`
-- Runs as: `dhc-svc` via `mcp-server.service`
-- Config loaded from `digitalhome.edge.config.cache` (JSON) — not from env vars directly
-- Tools talk to Node-RED via `httpx` — keep tools thin, no business logic in them
+- Runtime: same Node-RED container (no separate sync-agent)
+- Wire: `docs/specs/edge-cloud-api.md` — RFC 8628 OAuth device flow
+- State machine: `contrib/dhc-sync/lib/state-machine.js` (BOOT / UNLINKED /
+  AWAITING_APPROVAL / LINKED / DENIED / ERROR)
+- Dashboard: QR code + `user_code` + status, at `/dashboard` (Setup tab
+  while unlinked, Status tab while linked)
 
 ## Node-RED flows (`flows/`)
 
-- Node-RED runs as `dhc-svc` on `:1880`, userDir `/home/dhc-svc/.node-red`
-- **Node-RED Projects** is enabled — flows live in a separate git repo at
-  `/home/dhc-svc/.node-red/projects/digitalhome-flows/`
-- Credentials are encrypted in `flows_cred.json` (credential secret stored
-  in config cache at `nodered.credential_secret`)
-- Palettes installed: `node-red-contrib-ccu`, `node-red-contrib-huemagic`
-- Periodic snapshots go to `flows/exported/` in this repo for backup/review
-- `flows/flow-api.md` is the **source of truth** for HTTP-in endpoints.
-  Keep it updated whenever you add or change an endpoint.
-- HTTP-in endpoints follow the convention in SPEC.md (`/api/state/all`, etc.)
-- **Use hostnames** (`homematic-ccu`, `hue-bridge`) in all flow config nodes,
-  never hardcoded IPs
+- Node-RED runs inside the container, userDir `/data` = `/opt/dhe/node-red-data`
+- **Node-RED Projects** enabled — flows live under
+  `/opt/dhe/node-red-data/projects/`, git-backed via Projects UI
+- Credentials encrypted in `flows_cred.json` (key at
+  `/opt/dhe/secrets/nodered-credential-secret`)
+- Palettes baked into the image: `node-red-contrib-ccu`,
+  `node-red-contrib-huemagic`, `@flowfuse/node-red-dashboard`,
+  `node-red-contrib-dhc-mcp`, `node-red-contrib-dhc-sync`
+- `flows/flow-api.md` is the source of truth for `/api/*` endpoints
+- Use hostnames (`homematic-ccu`, `hue-bridge`) in flow config nodes, never
+  hardcoded IPs
 
 ## Database (`db/`)
 
-- SQLite — schema in `db/schema.sql`, migrations in `db/migrations/`
-- Three tables: `knowledge`, `agent_log`, `device` — see SPEC.md for schema
-- Never modify the DB file directly; go through MCP tools or migrations
-- Name migration files: `001_initial.sql`, `002_add_column.sql`, etc.
+`db/schema.sql` was previously served by a standalone Python MCP server that
+has been retired. The Node-RED container does not currently attach a SQLite
+store. Kept in the tree because the same schema will be reused when the C-BOX
+catalog work lands (Phase 3+) as `/opt/dhe/db/digitalhome.db`.
 
-## Shared agent memory — important behaviour
+## Shared agent memory (planned)
 
-When a Claude agent discovers something non-obvious (a device quirk, a failure mode,
-a working pattern), it **must** call `kb_add` to write it to the knowledge base.
-Before attempting anything with a device or flow, call `kb_search` first.
+Once the in-container store is wired, agents will:
+- Call `kb_search` before attempting anything with a device or flow
+- Call `kb_add` on discovering a device quirk, failure mode, or working
+  pattern
 
 This is how multiple agents build shared institutional knowledge over time.
+Not active today.
 
 ## Deploying changes to the server
 
-After committing to this repo, deploy to the server:
-
 ```bash
-# on DLAB5-M92P-01 as frank-uwe
-cd /home/dhc-svc/digitalhome-edge
+# on the target box as an admin user
+cd ~/digitalhome-edge
 git pull
-sudo systemctl restart mcp-server   # if mcp-server/ changed
-sudo systemctl restart nodered      # if flows changed
+
+# only rebuild if the Dockerfile or contrib/ palettes changed
+sudo docker compose -f deploy/docker-compose.yml build
+
+# restart to pick up the new image (or the updated flows submodule)
+sudo systemctl restart dhe.service
 ```
 
-The repo should be cloned at `/home/dhc-svc/digitalhome-edge/` on the server.
-For a full fresh install (new server), use the install script:
-```bash
-sudo bash install.sh --mode prod    # or --mode stage
-```
-See `docs/install.md` for the full install procedure and post-install steps.
+Use `dhcedge` to manage the stack:
 
-Use `dhcedge` to manage the server:
 ```bash
-dhcedge status          # show service state
-sudo dhcedge start      # bring up services
-sudo dhcedge stop       # take down services
-sudo dhcedge update-hosts  # regenerate /etc/hosts from config cache
-dhcedge show-config     # view config (secrets redacted)
+dhcedge status                # systemd + container state
+sudo dhcedge start            # bring up
+sudo dhcedge stop             # tear down
+sudo dhcedge restart
+sudo dhcedge logs             # tail node-red logs
+sudo dhcedge update-hosts     # regenerate /etc/hosts from config cache
+dhcedge show-config           # config cache (secrets redacted)
+sudo dhcedge show-secrets     # MCP token + Node-RED credentials
 ```
+
+Full install / bring-up procedure lives at `docs/install.md`.
 
 ## Web UX
 
 Operational UI (device control, scenes, sensors) → **Node-RED Dashboard v2**
-(`@flowfuse/node-red-dashboard` palette), served at `:1880/ui`. No separate
-frontend server needed. Install the palette in Node-RED, then build dashboard
-tabs alongside the flows.
+(`@flowfuse/node-red-dashboard`) at `:1880/dashboard`. No separate frontend
+server. Dashboard tabs are built as Node-RED flows.
+
+The `dhc-sync` palette ships an importable pairing UI at
+`contrib/dhc-sync/examples/pairing-flow.json` — Setup tab for the QR code +
+`user_code`, Status tab once linked.
 
 ## What's not done yet (open items)
 

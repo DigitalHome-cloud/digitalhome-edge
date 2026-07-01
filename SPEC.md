@@ -8,18 +8,19 @@
 
 ## Overview
 
-**digitalhome.edge** is the local edge server for the digitalhome platform. It bridges
-`digitalhome.cloud` (AWS REST backend) with local smarthome hardware, and runs a Claude
-agent that acts as an autonomous digitalhome admin.
+**digitalhome.edge** is the local edge server for the digitalhome platform.
+It bridges `digitalhome.cloud` with local smarthome hardware and hosts a
+Node-RED–embedded MCP server that Claude connects to.
 
-This repository contains the **application layer** for the local edge server.
+This repository contains the application layer. On a running box it
+deploys as a Docker Compose stack under `/opt/dhe/`.
 
 | Environment | Server | Branch |
 |-------------|--------|--------|
-| **Stage** | DLAB5-W541-01 (ThinkPad W541, Ubuntu 24.04.2 LTS) | `stage` |
-| **Production** | DLAB5-M92P-01 (ThinkCentre M92p, Ubuntu 24.04.2 LTS headless) | `main` |
+| **Stage** | DLAB5-W541-01 (ThinkPad W541, Ubuntu 24.04) | `stage` |
+| **Production** | DLAB5-M92P-01 (ThinkCentre M92p, Ubuntu 24.04 headless) | `main` |
 
-Deployment is pipeline-based via GitHub — each server tracks its branch.
+Deploy: pipeline-based via GitHub — each server tracks its branch.
 
 ---
 
@@ -28,7 +29,7 @@ Deployment is pipeline-based via GitHub — each server tracks its branch.
 | Tier | Description |
 |---|---|
 | **Basic** | Node-RED bridge: routes data between digitalhome.cloud and local devices |
-| **Advanced** | Basic + Claude agent: automates backend tasks, learns from history, acts as admin |
+| **Advanced** | Basic + Claude agent: MCP tools + resources exposed on the same Node-RED, callable by Claude |
 
 This deployment is **Advanced**.
 
@@ -36,47 +37,45 @@ This deployment is **Advanced**.
 
 ## Architecture
 
+One container, one runtime — Node-RED with a custom set of palettes:
+
 ```
-digitalhome.cloud (AWS REST)
-        │  HTTP REST
+digitalhome.cloud (AWS Amplify Gen2)
+        │  HTTPS
         ▼
-┌───────────────────────────────────────────┐
-│             Node-RED  :1880               │
-│                                           │
-│  node-red-contrib-ccu   ← Homematic CCU   │
-│  node-red-contrib-huemagic ← Hue Bridge  │
-│                                           │
-│  HTTP-in /api/*  ← MCP server calls here │
-│  HTTP-out        → digitalhome.cloud      │
-└──────────────────┬────────────────────────┘
-                   │ HTTP localhost
-                   ▼
-┌───────────────────────────────────────────┐
-│         MCP Server  :8000  (SSE)          │
-│         Python / FastMCP                  │
-│                                           │
-│  tools: nodered_query, nodered_trigger,   │
-│         nodered_inject, nodered_get_flows │
-│         cloud_get, cloud_post, cloud_patch│
-│         kb_search, kb_add,                │
-│         agent_log_write                   │
-└──────────────────┬────────────────────────┘
-                   │ MCP SSE
-                   ▼
-┌───────────────────────────────────────────┐
-│         Claude Agent (dhc-svc)            │
-│         digitalhome admin                 │
-└───────────────────────────────────────────┘
-                   │ read/write
-                   ▼
-┌───────────────────────────────────────────┐
-│         SQLite  (shared memory DB)        │
-│  knowledge — practices, limitations,      │
-│              device notes, incidents      │
-│  agent_log — decision audit trail         │
-│  device    — canonical device registry    │
-└───────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────┐
+│   dhe-nodered container  (Node-RED 4.0.9, port 1880)  │
+│                                                       │
+│   device palettes:                                    │
+│     node-red-contrib-ccu       → Homematic CCU        │
+│     node-red-contrib-huemagic  → Philips Hue Bridge   │
+│     @flowfuse/node-red-dashboard → dashboard UI       │
+│                                                       │
+│   dhe palettes (in-tree, contrib/):                   │
+│     node-red-contrib-dhc-mcp   → MCP server surface   │
+│       endpoints: /mcp/sse, /mcp/messages/*,           │
+│                  /mcp/health                          │
+│       nodes: mcp-server-config, mcp-tool-in,          │
+│              mcp-resource-in, mcp-response            │
+│                                                       │
+│     node-red-contrib-dhc-sync  → cloud OAuth + sync   │
+│       nodes: dhc-sync-config, dhc-sync-status,        │
+│              dhc-sync-cbox-out                        │
+│                                                       │
+│   auth on all surfaces:                               │
+│     Node-RED editor / admin API — adminAuth (bcrypt)  │
+│     /api/*                       — httpNodeAuth       │
+│     /mcp/*                       — Bearer token       │
+└──────────────────────────────┬────────────────────────┘
+                               │
+                               ▼
+┌───────────────────────────────────────────────────────┐
+│                Claude (Anthropic API)                 │
+│   connects to MCP over SSE with Authorization: Bearer │
+└───────────────────────────────────────────────────────┘
 ```
+
+Systemd oneshot `dhe.service` manages the compose lifecycle.
 
 ---
 
@@ -88,9 +87,12 @@ digitalhome.cloud (AWS REST)
 | Philips Hue Bridge | REST | 192.168.1.15 |
 | This edge server | — | 192.168.1.10 |
 
-Sensitive values (API keys, credentials) live only in `digitalhome.edge.config.cache`
-(gitignored) on the server — never committed to this repo. Secrets will be managed
-centrally via `digitalhome.cloud` or configured during setup (`install.sh`).
+Sensitive values (API keys, credentials) live only under
+`/opt/dhe/secrets/` and `/opt/dhe/config/dhe.config.cache` on the server
+— gitignored, never committed. Bootstrap generates them locally on first
+install. The digitalhome.cloud device flow eventually replaces the
+device-side API keys with a `device_token` scoped to the linked SmartHome
+(see [`docs/specs/edge-cloud-api.md`](docs/specs/edge-cloud-api.md)).
 
 ---
 
@@ -98,30 +100,42 @@ centrally via `digitalhome.cloud` or configured during setup (`install.sh`).
 
 ```
 digitalhome-edge/
-  mcp-server/
-    server.py          ← FastMCP server, 12 tools
-    requirements.txt
+  contrib/
+    dhc-mcp/           ← MCP server palette (in-tree; installed at build)
+    dhc-sync/          ← OAuth + telemetry + dashboard palette (in-tree)
+  deploy/
+    docker-compose.yml ← single node-red service
+    dhe.service        ← systemd oneshot
+    bootstrap.sh       ← seeds /opt/dhe/ layout
+    nodered/
+      Dockerfile       ← nodered:4.0.9 base + palettes baked in
+      entrypoint.sh    ← bcrypts secrets into settings.js on first boot
   flows/
-    digitalhome-flows/ ← git submodule (Node-RED project)
-    flow-api.md        ← HTTP-in endpoint catalogue (source of truth)
+    digitalhome-flows/ ← git submodule (Node-RED Project)
+    flow-api.md        ← HTTP-in endpoint catalogue
   db/
-    schema.sql         ← SQLite schema (device table with DHC ontology columns)
-    migrations/        ← numbered migration files (001_*.sql, ...)
+    schema.sql         ← SQLite schema for knowledge / agent_log / device
+                          (retained for reuse in a future in-container store)
+    migrations/
   bin/
-    dhcedge            ← CLI for service management
+    dhcedge            ← CLI for the Docker stack
   docs/
+    architecture.md    ← target-state (SLAB5 spec)
     install.md         ← installation procedure
+    adr/               ← Architecture Decision Records
+    audits/            ← security & quality audit reports
+    specs/             ← wire-level specs (edge ↔ cloud)
   SPEC.md              ← this file
   CLAUDE.md            ← Claude Code instructions
-  install.sh           ← automated installer
 ```
 
 ---
 
-## Node-RED Flow API
+## Node-RED Flow API (`/api/*`)
 
-Node-RED exposes HTTP-in endpoints on `localhost:1880`. These are the **only** interface
-the MCP server uses for device control. All endpoints return JSON.
+Node-RED exposes HTTP-in endpoints on the same port (1880) as the MCP
+surface. `httpNodeAuth` in `settings.js` protects them; the operator
+configures a Basic-auth client for the flows to speak with.
 
 ### Conventions
 
@@ -134,18 +148,62 @@ the MCP server uses for device control. All endpoints return JSON.
 - `POST /api/heating/{room}/set`  — body: `{"temp": 20.5}`
 - `GET  /api/heating/status`      — all thermostat readings
 - `POST /api/cloud/sync`          — push state snapshot to digitalhome.cloud
-- `GET  /api/devices`             — list all devices from SQLite inventory
-- `GET  /api/devices/{class}`     — filter by DHC T-Box class (Light, Thermostat, etc.)
-- `POST /api/devices/sync`        — discover devices from CCU + Hue, UPSERT into SQLite
+- `GET  /api/devices`             — list all devices from local inventory
+- `GET  /api/devices/{class}`     — filter by DHC T-Box class
+- `POST /api/devices/sync`        — discover devices from CCU + Hue
 
-See `flows/flow-api.md` for the full catalogue as flows are built out.
+See [`flows/flow-api.md`](flows/flow-api.md) for the full catalogue as
+flows are built out.
 
 ---
 
-## Shared Memory Database
+## MCP Server (in Node-RED)
 
-**Location on server:** `/home/dhc-svc/digitalhome-edge/db/digitalhome.db` (SQLite,
-gitignored)
+Endpoints served by `node-red-contrib-dhc-mcp`:
+
+| Path | Auth | Purpose |
+|---|---|---|
+| `GET /mcp/sse` | Bearer token | Establish SSE session (MCP transport) |
+| `POST /mcp/messages/:sessionId` | Bearer token | Client → server JSON-RPC |
+| `GET /mcp/health` | Bearer token | Health probe (server name, version, counts) |
+
+The Bearer token is generated by `deploy/bootstrap.sh` on first install
+and stored at `/opt/dhe/secrets/mcp-auth-token` (mode 0600).
+
+Tools and resources register themselves via `mcp-tool-in` and
+`mcp-resource-in` nodes. `mcp-response` terminates the flow and returns
+the payload to Claude. The registry generates the MCP catalog and emits
+`notifications/tools/list_changed` when it mutates.
+
+---
+
+## Cloud Sync (in Node-RED)
+
+`node-red-contrib-dhc-sync` implements the client side of
+[`docs/specs/edge-cloud-api.md`](docs/specs/edge-cloud-api.md):
+
+1. On first boot with no `device-token`, POST `/edge/v1/device_authorization`.
+2. Dashboard displays QR code + `user_code` to the operator.
+3. Operator opens the URL on their phone, logs into digitalhome.cloud,
+   picks the target SmartHome, approves.
+4. Edge polls `/edge/v1/token` until approved, persists the returned
+   `device_token`.
+5. Steady state: POST `/edge/v1/telemetry` (full initial, then deltas
+   every `poll_after_s`). 410 Gone wipes secrets and restarts the flow.
+
+The state machine (BOOT / UNLINKED / AWAITING_APPROVAL / LINKED / DENIED
+/ ERROR) is implemented at
+[`contrib/dhc-sync/lib/state-machine.js`](contrib/dhc-sync/lib/state-machine.js).
+
+---
+
+## Shared Memory Database (planned, not currently active)
+
+`db/schema.sql` defines tables (`knowledge`, `agent_log`, `device`) that
+were previously served by a standalone Python MCP server. The Node-RED
+container currently doesn't attach them. When the digital-twin catalog
+lands (Phase 3+), the same schema will be reused in-container at
+`/opt/dhe/db/digitalhome.db`.
 
 ### Tables
 
@@ -154,11 +212,6 @@ gitignored)
 id, type, topic, content, tags, source_agent, created_at, updated_at
 ```
 Types: `practice`, `limitation`, `device_note`, `automation`, `incident`
-
-Example entries:
-- `limitation` / `homematic` / "LEVEL datapoint uses float 0.0–1.0, not 0–100"
-- `practice` / `hue` / "Always dim to 1 before off for bulb longevity"
-- `incident` / `heating` / "CCU drops BidCos-RF connection if polled > 1/sec"
 
 **`agent_log`** — audit trail of agent decisions
 ```
@@ -172,32 +225,6 @@ dhc_class, design_view, capability, model, manufacturer,
 ccu_ise_id, hue_unique_id, last_seen, notes
 ```
 
-DHC T-Box classes: `Light`, `Switch`, `Socket`, `Thermostat`, `Heater`,
-`Sensor`, `Actor`, `Controller`, `Gateway`
-
-Design views: `electrical`, `heating`, `network`, `automation`
-
-Capabilities: `sensor`, `actor`, `controller` (comma-separated if multiple)
-
----
-
-## MCP Tools Reference
-
-| Tool | Description |
-|---|---|
-| `nodered_get_flows()` | List all Node-RED flows — discover endpoints before calling |
-| `nodered_query(endpoint)` | GET a Node-RED endpoint — read device/system state |
-| `nodered_trigger(endpoint, payload)` | POST to a Node-RED endpoint — trigger action/scene |
-| `nodered_inject(node_id)` | Trigger a specific inject node by ID |
-| `cloud_get(path)` | GET from digitalhome.cloud REST API |
-| `cloud_post(path, payload)` | POST to digitalhome.cloud REST API |
-| `cloud_patch(path, payload)` | PATCH a resource on digitalhome.cloud REST API |
-| `kb_search(query, type?)` | Full-text search the knowledge base |
-| `kb_add(type, topic, content, tags?)` | Write a new knowledge entry |
-| `agent_log_write(action, tool, result, outcome)` | Log an agent decision |
-| `device_list(room?, dhc_class?, design_view?, capability?, protocol?)` | Query device inventory with ontology filters |
-| `device_sync()` | Trigger full CCU + Hue device discovery into SQLite |
-
 ---
 
 ## Component Inventory & Licences
@@ -209,62 +236,53 @@ Capabilities: `sensor`, `actor`, `controller` (comma-separated if multiple)
 
 | Component | Role | Licence |
 |---|---|---|
-| [Node-RED](https://nodered.org) | Flow engine, device bridge, web UI host | Apache 2.0 |
+| [Node-RED](https://nodered.org) | Flow engine + HTTP surface | Apache 2.0 |
 | [node-red-contrib-ccu](https://github.com/hobbyquaker/node-red-contrib-ccu) | Homematic CCU integration | MIT |
 | [node-red-contrib-huemagic](https://github.com/Fodlos/node-red-contrib-huemagic) | Philips Hue integration | MIT |
-| [@flowfuse/node-red-dashboard](https://github.com/FlowFuse/node-red-dashboard) | Dashboard UI palette for Node-RED | Apache 2.0 |
-| [Python 3.12](https://python.org) | MCP server runtime | PSF |
-| [FastMCP (`mcp`)](https://github.com/modelcontextprotocol/python-sdk) | MCP server framework | MIT |
-| [httpx](https://www.python-httpx.org) | Async HTTP client | BSD-3-Clause |
-| [aiosqlite](https://github.com/omnilib/aiosqlite) | Async SQLite wrapper | MIT |
-| [python-dotenv](https://github.com/theskumar/python-dotenv) | `.env` loader | BSD-3-Clause |
-| [SQLite](https://sqlite.org) | Embedded database | Public domain |
+| [@flowfuse/node-red-dashboard](https://github.com/FlowFuse/node-red-dashboard) | Dashboard UI palette | Apache 2.0 |
+| [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) | MCP server (used by `dhc-mcp`) | MIT |
+| [qrcode](https://github.com/soldair/node-qrcode) | QR generation in `dhc-sync` pairing UI | MIT |
+| [Docker Engine + Compose](https://docker.com) | Container runtime | Apache 2.0 |
 | [Ubuntu Server 24.04 LTS](https://ubuntu.com) | Host OS | Various OSS |
-| [MCP protocol spec](https://modelcontextprotocol.io) | Agent-tool communication protocol | MIT |
 
 ### Proprietary — accepted exceptions
 
 | Component | Role | Notes |
 |---|---|---|
-| **Claude (Anthropic)** | AI agent | Proprietary commercial model. The MCP protocol and SDK are open source; the model itself is not. Acceptable because the edge server is not *dependent* on Claude — it can be replaced by any MCP-compatible agent. |
-| **Homematic CCU firmware** | Device controller firmware | Proprietary (eQ-3 hardware). Local-only, no cloud dependency. |
-| **Philips Hue Bridge firmware** | Light controller firmware | Proprietary (Signify hardware). Local API used; no Hue cloud dependency. |
-
-### Note on FlowFuse
-
-`@flowfuse/node-red-dashboard` (the npm package) is Apache 2.0. FlowFuse also
-sells a commercial hosted platform — that product is not used here. The
-self-hosted dashboard palette has no commercial dependency.
+| **Claude (Anthropic)** | AI agent | Proprietary commercial model. MCP protocol and SDK are open source; the model itself is not. Acceptable because the edge is not *dependent* on Claude — any MCP-compatible agent works. |
+| **Homematic CCU firmware** | Device controller firmware | Proprietary (eQ-3 hardware). Local-only. |
+| **Philips Hue Bridge firmware** | Light controller firmware | Proprietary (Signify hardware). Local API only. |
 
 ---
 
-## Service Accounts & Ports
+## Ports & Services
 
-All services run as `dhc-svc` (system account, no login shell).
+Single systemd unit + single container. All auth-gated.
 
-| Service | Port | Systemd unit |
+| Path | Port | Auth |
 |---|---|---|
-| Node-RED | 1880 | `nodered.service` |
-| MCP Server | 8000 | `mcp-server.service` |
-| SSH | 22 | `ssh.service` |
+| Node-RED editor | 1880 | adminAuth (Basic + token) |
+| `/api/*` (device HTTP endpoints) | 1880 | httpNodeAuth (Basic) |
+| `/mcp/sse`, `/mcp/messages/*` | 1880 | Bearer token |
+| Dashboard `/dashboard` | 1880 | adminAuth |
+| SSH | 22 | (host-level) |
 
-Firewall: `ufw` — only ports 22, 1880, 8000 open.
+Ports 8000 and 8443 (used by the retired Python MCP container) are now
+free.
 
 ---
 
 ## Open Items
 
-- [x] Hue API key — registered and stored in `digitalhome.edge.config.cache`
-- [ ] digitalhome.cloud URL + API key — add to `digitalhome.edge.config.cache` (cloud-sync will automate this later)
+- [x] Hue API key — registered and stored under `/opt/dhe/secrets/hue-api-key`
 - [x] Build initial Node-RED flows for Homematic + Hue
-- [x] Implement `kb_search` / `kb_add` / `agent_log_write` MCP tools
-- [x] Create SQLite schema (DB auto-initialised on first server startup)
-- [x] Write `flows/flow-api.md` endpoint catalogue
-- [x] Install Node-RED Dashboard v2 (`@flowfuse/node-red-dashboard`) for operational web UX at `:1880/ui`
-- [x] Unified device inventory — 57 devices (46 CCU + 11 Hue) tagged with DHC T-Box classes
-- [x] `device_list` / `device_sync` MCP tools
-- [x] Devices dashboard page with inventory overview and detailed table
-- [ ] Export first flow snapshot to `flows/exported/`
-- [ ] Implement cloud config sync from `digitalhome.cloud` → `digitalhome.edge.config.cache`
+- [x] Install Node-RED Dashboard v2 (baked into image)
+- [x] Retire the systemd Python MCP stack; collapse to one container
+- [x] Bearer auth on the MCP endpoint
+- [x] OAuth device flow client (`dhc-sync`) + state machine + dashboard UI
+- [x] Edge ↔ Cloud API spec (`docs/specs/edge-cloud-api.md`)
+- [ ] Cloud side: `POST /edge/v1/device_authorization`, `/token`, `/telemetry` — implemented in `digitalhome-cloud-darkfactory`
+- [ ] Starter flow seeded on first boot (auto-instantiate `mcp-server-config` + `dhc-sync-config` + dashboard tabs)
+- [ ] C-BOX generator + catalog dispatch inside `dhc-mcp` (Phase 3)
 - [ ] Assign room names to devices (currently all null)
 - [ ] Pipeline-based deployment: stage branch → DLAB5-W541-01, main → DLAB5-M92P-01
