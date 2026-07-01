@@ -239,7 +239,10 @@ for path in \
 done
 [[ -n "$BCRYPT_MODULE" ]] || die "bcryptjs not found under Node-RED — palette install may have failed."
 
-# hash_pw <plaintext> — echoes the bcrypt hash (Node-RED-compatible)
+# hash_pw <plaintext> — echoes the bcrypt hash (Node-RED-compatible).
+# The `<<< "$pw"` heredoc appends a newline, so trim before hashing —
+# otherwise the stored hash is for `password\n` and basic-auth (which sends
+# the plain password) will fail to match at Node-RED's checker.
 hash_pw() {
     local pw="$1"
     node -e "
@@ -247,7 +250,7 @@ hash_pw() {
         let data = '';
         process.stdin.on('data', c => data += c);
         process.stdin.on('end', () => {
-            bcrypt.hash(data, 8, (err, h) => {
+            bcrypt.hash(data.replace(/\r?\n$/, ''), 8, (err, h) => {
                 if (err) { console.error(err); process.exit(1); }
                 process.stdout.write(h);
             });
