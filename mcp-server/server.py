@@ -5,28 +5,42 @@ All device logic (Homematic, Philips Hue) lives in Node-RED flows.
 """
 
 import json
+import logging
 import os
+import secrets
+import sys
 import aiosqlite
 import httpx
 from contextlib import asynccontextmanager
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
+from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+
+log = logging.getLogger("digitalhome-edge")
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _CONFIG_CACHE = os.path.join(_PROJECT_ROOT, "digitalhome.edge.config.cache")
 
 _CONFIG_DEFAULTS: dict = {
-    "version": 2,
+    "version": 3,
     "instance": {
         "id": "digitalhome-edge-01",
         "name": "My Digitalhome",
         "location": "Home",
     },
+    "mcp": {
+        "auth_token": "",
+    },
     "nodered": {
         "url": os.getenv("NODERED_URL", "http://localhost:1880"),
         "credential_secret": "",
+        "admin_user": "admin",
+        "admin_password": "",
+        "http_user": "dhcedge",
+        "http_password": "",
     },
     "cloud": {
         "api_url": os.getenv("CLOUD_API_URL", "https://api.digitalhome.cloud"),
@@ -47,28 +61,113 @@ _CONFIG_DEFAULTS: dict = {
 }
 
 
+def _write_config(cfg: dict) -> None:
+    """Persist config to disk and re-apply 0600 perms (defence in depth)."""
+    with open(_CONFIG_CACHE, "w") as f:
+        json.dump(cfg, f, indent=2)
+    try:
+        os.chmod(_CONFIG_CACHE, 0o600)
+    except OSError:
+        pass
+
+
 def _load_config() -> dict:
     """
-    Load config from digitalhome.edge.config.cache.
-    On first startup the file doesn't exist — create it with defaults seeded
-    from environment variables (which take precedence over hardcoded values).
-    The cache is gitignored and will eventually be populated from digitalhome.cloud.
+    Load config from digitalhome.edge.config.cache. On first startup, seed the
+    file from defaults + environment. Self-heal a missing MCP auth token so
+    the endpoint is never unauthenticated: if the token is empty the server
+    generates one, writes it back, and logs it once so the operator can wire
+    it into the Claude Desktop client.
+
+    The Node-RED admin/http passwords are NOT self-generated here — install.sh
+    owns those (they must be bcrypt-hashed into settings.js at the same time,
+    which is a Node-RED-side concern). If they're missing at load time the
+    server logs a warning but continues; MCP → Node-RED calls will fail with
+    401 until the operator runs install.sh.
     """
     if os.path.exists(_CONFIG_CACHE):
         with open(_CONFIG_CACHE) as f:
-            return json.load(f)
-    # First startup: write defaults so operators can edit the file directly.
-    with open(_CONFIG_CACHE, "w") as f:
-        json.dump(_CONFIG_DEFAULTS, f, indent=2)
-    return _CONFIG_DEFAULTS
+            cfg = json.load(f)
+    else:
+        cfg = json.loads(json.dumps(_CONFIG_DEFAULTS))  # deep copy
+        _write_config(cfg)
+
+    # Self-heal missing MCP bearer token
+    mcp_cfg = cfg.setdefault("mcp", {})
+    if not mcp_cfg.get("auth_token"):
+        token = secrets.token_hex(32)
+        mcp_cfg["auth_token"] = token
+        _write_config(cfg)
+        # log to stderr so systemd captures it; operator reads via journalctl
+        print(
+            "digitalhome-edge: generated MCP auth token — add to Claude "
+            f"Desktop config as 'Authorization: Bearer {token}'. Token also "
+            f"stored in {_CONFIG_CACHE} under mcp.auth_token.",
+            file=sys.stderr,
+        )
+    return cfg
 
 
 _cfg = _load_config()
 
-NODERED_URL   = _cfg["nodered"]["url"]
-CLOUD_API_URL = _cfg["cloud"]["api_url"]
-CLOUD_API_KEY = _cfg["cloud"]["api_key"]
-DB_PATH       = _cfg["db"]["path"]
+MCP_AUTH_TOKEN      = _cfg["mcp"]["auth_token"]
+NODERED_URL         = _cfg["nodered"]["url"]
+NODERED_HTTP_USER   = _cfg["nodered"].get("http_user", "dhcedge")
+NODERED_HTTP_PW     = _cfg["nodered"].get("http_password", "")
+CLOUD_API_URL       = _cfg["cloud"]["api_url"]
+CLOUD_API_KEY       = _cfg["cloud"]["api_key"]
+DB_PATH             = _cfg["db"]["path"]
+
+if not NODERED_HTTP_PW:
+    print(
+        "digitalhome-edge: nodered.http_password is empty — MCP → Node-RED "
+        "calls will fail with 401. Run install.sh to provision credentials.",
+        file=sys.stderr,
+    )
+
+_NODERED_AUTH = httpx.BasicAuth(NODERED_HTTP_USER, NODERED_HTTP_PW) if NODERED_HTTP_PW else None
+
+
+def _nodered_client() -> httpx.AsyncClient:
+    """AsyncClient factory: basic auth for /api/* and admin API calls."""
+    return httpx.AsyncClient(auth=_NODERED_AUTH)
+
+
+class BearerAuthMiddleware:
+    """ASGI middleware enforcing `Authorization: Bearer <MCP_AUTH_TOKEN>`.
+
+    Written as pure ASGI (not Starlette's BaseHTTPMiddleware) so that the SSE
+    streaming response passes through untouched — BaseHTTPMiddleware wraps
+    responses in a way that has known interactions with long-lived streams.
+    """
+
+    def __init__(self, app: ASGIApp, token: str) -> None:
+        self._app = app
+        self._expected = f"Bearer {token}"
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        header_val = ""
+        for name, value in scope.get("headers", ()):
+            if name == b"authorization":
+                header_val = value.decode("latin-1", errors="replace")
+                break
+
+        # constant-time compare
+        expected = self._expected
+        ok = len(header_val) == len(expected) and secrets.compare_digest(header_val, expected)
+        if not ok:
+            response = JSONResponse(
+                {"error": "unauthorized", "detail": "missing or invalid bearer token"},
+                status_code=401,
+            )
+            await response(scope, receive, send)
+            return
+
+        await self._app(scope, receive, send)
 
 
 async def _init_db() -> None:
@@ -111,7 +210,7 @@ async def nodered_get_flows() -> dict:
     List all Node-RED flows. Use this to discover available automations,
     devices, and HTTP-in endpoints before triggering anything.
     """
-    async with httpx.AsyncClient() as c:
+    async with _nodered_client() as c:
         r = await c.get(f"{NODERED_URL}/flows", timeout=10)
         r.raise_for_status()
         return r.json()
@@ -125,7 +224,7 @@ async def nodered_trigger(endpoint: str, payload: dict = {}) -> dict:
     payload: optional JSON body passed to the flow
     All device control goes through here — never talk to devices directly.
     """
-    async with httpx.AsyncClient() as c:
+    async with _nodered_client() as c:
         r = await c.post(f"{NODERED_URL}{endpoint}", json=payload, timeout=10)
         r.raise_for_status()
         return r.json() if r.content else {"status": "ok"}
@@ -137,7 +236,7 @@ async def nodered_query(endpoint: str) -> dict:
     GET a Node-RED HTTP-in endpoint to read state or data from a flow.
     endpoint: e.g. '/api/state/all', '/api/heating/status'
     """
-    async with httpx.AsyncClient() as c:
+    async with _nodered_client() as c:
         r = await c.get(f"{NODERED_URL}{endpoint}", timeout=10)
         r.raise_for_status()
         return r.json()
@@ -150,7 +249,7 @@ async def nodered_inject(node_id: str) -> dict:
     Use nodered_get_flows() first to find node IDs.
     Prefer nodered_trigger() with named endpoints where possible.
     """
-    async with httpx.AsyncClient() as c:
+    async with _nodered_client() as c:
         r = await c.post(f"{NODERED_URL}/inject/{node_id}", timeout=10)
         r.raise_for_status()
         return {"status": "injected", "node_id": node_id}
@@ -333,7 +432,7 @@ async def device_sync() -> dict:
     maps devices to DHC ontology classes, and writes to the SQLite device table.
     Returns sync result with device counts per source.
     """
-    async with httpx.AsyncClient() as c:
+    async with _nodered_client() as c:
         r = await c.post(f"{NODERED_URL}/api/devices/sync", json={}, timeout=30)
         r.raise_for_status()
         return r.json() if r.content else {"status": "ok"}
@@ -343,5 +442,8 @@ async def device_sync() -> dict:
 
 if __name__ == "__main__":
     import uvicorn
-    # SSE transport — Claude connects via HTTP, works locally and over LAN
-    uvicorn.run(mcp.sse_app(), host="0.0.0.0", port=8000)
+
+    # SSE transport — Claude connects via HTTP, works locally and over LAN.
+    # Bearer auth is enforced on every request via BearerAuthMiddleware.
+    app = BearerAuthMiddleware(mcp.sse_app(), token=MCP_AUTH_TOKEN)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

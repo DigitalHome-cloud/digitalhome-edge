@@ -85,13 +85,20 @@ It is not installed automatically because it requires Node-RED to be running.
 
 ### 5. Connect Claude to the MCP server
 
+The MCP endpoint requires a bearer token — the installer generates one and
+prints it at the end of the install (also retrievable with
+`sudo dhcedge show-secrets`).
+
 Add to Claude Desktop config (`claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "digitalhome-edge": {
-      "url": "http://192.168.1.10:8000/sse"
+      "url": "http://192.168.1.10:8000/sse",
+      "headers": {
+        "Authorization": "Bearer <token from `sudo dhcedge show-secrets`>"
+      }
     }
   }
 }
@@ -99,8 +106,36 @@ Add to Claude Desktop config (`claude_desktop_config.json`):
 
 Or use the MCP inspector to verify:
 ```bash
-npx @modelcontextprotocol/inspector http://192.168.1.10:8000/sse
+npx @modelcontextprotocol/inspector \
+    --header "Authorization: Bearer <token>" \
+    http://192.168.1.10:8000/sse
 ```
+
+## Node-RED editor login
+
+The installer also configures `adminAuth` and `httpNodeAuth` in `settings.js`,
+so `http://<server-ip>:1880` and every `/api/*` endpoint now require a login.
+Two accounts are created:
+
+- **Admin** (`admin` by default) — full editor access. Use for `Manage palette`,
+  creating the Node-RED project, deploying flows.
+- **`dhcedge`** — a service account whose password the MCP server uses when
+  calling `/api/*`. You'll rarely need it directly.
+
+Passwords are printed once at install time. Retrieve them later with:
+
+```bash
+sudo dhcedge show-secrets
+```
+
+The plaintext passwords live in `/home/dhc-svc/digitalhome.edge.config.cache`
+(mode `0600`, gitignored). The bcrypt-hashed forms are in
+`/home/dhc-svc/.node-red/settings.js`.
+
+To **rotate** any credential: delete the corresponding block from `settings.js`
+(the `adminAuth: {…}` block or the `httpNodeAuth: …` line), clear the matching
+plaintext field in the config cache, then re-run `sudo bash install.sh`. The
+installer regenerates missing values and reinserts the settings blocks.
 
 ## Deploying updates
 

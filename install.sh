@@ -166,40 +166,94 @@ CONFIG_CACHE="${DHC_HOME}/digitalhome.edge.config.cache"
 if [[ ! -f "${CONFIG_CACHE}" ]]; then
     log "Creating config cache from example..."
     cp "${REPO_DIR}/digitalhome.edge.config.cache.example" "${CONFIG_CACHE}"
-    chown "${DHC_USER}:${DHC_USER}" "${CONFIG_CACHE}"
     log "  Edit ${CONFIG_CACHE} to set cloud.api_key and instance details."
-else
-    log "  Config cache already exists — skipping."
 fi
+chown "${DHC_USER}:${DHC_USER}" "${CONFIG_CACHE}"
+chmod 600 "${CONFIG_CACHE}"
 
-# ── 8. Node-RED credential secret ─────────────────────────────────────────────
+# ── 8. secrets: credential secret, MCP bearer token, Node-RED passwords ─────
+
+# All secret material is generated idempotently: read the config cache, only
+# generate + persist a value if the current one is empty. Plain-text passwords
+# are needed for the MCP server (basic auth → Node-RED /api/*) and for the
+# operator (Node-RED editor login) — they stay in the config cache which is
+# now 0600. The bcrypt-hashed forms live in Node-RED's settings.js.
+
+# Emit a helper that reads config → writes if empty → prints the value used.
+# Args: <json.path.dotted> <generator command>
+config_get_or_gen() {
+    local path="$1"
+    local gen_cmd="$2"
+    python3 - "$path" "$gen_cmd" "${CONFIG_CACHE}" <<'PY'
+import json, os, subprocess, sys
+path_key, gen_cmd, config_path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(config_path) as f:
+    cfg = json.load(f)
+# walk dotted path, seeding intermediate dicts
+parts = path_key.split(".")
+node = cfg
+for p in parts[:-1]:
+    node = node.setdefault(p, {})
+current = node.get(parts[-1], "")
+if not current:
+    current = subprocess.check_output(["bash", "-c", gen_cmd], text=True).strip()
+    node[parts[-1]] = current
+    with open(config_path, "w") as f:
+        json.dump(cfg, f, indent=2)
+    os.chmod(config_path, 0o600)
+print(current)
+PY
+}
 
 log "Configuring Node-RED credential secret..."
-CRED_SECRET=$(python3 -c "
-import json, sys
-with open('${CONFIG_CACHE}') as f:
-    cfg = json.load(f)
-print(cfg.get('nodered', {}).get('credential_secret', ''))
-")
+CRED_SECRET="$(config_get_or_gen "nodered.credential_secret" "python3 -c 'import secrets; print(secrets.token_hex(32))'")"
 
-if [[ -z "$CRED_SECRET" ]]; then
-    CRED_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-    python3 -c "
-import json
-with open('${CONFIG_CACHE}', 'r+') as f:
-    cfg = json.load(f)
-    cfg.setdefault('nodered', {})['credential_secret'] = '${CRED_SECRET}'
-    f.seek(0); json.dump(cfg, f, indent=2); f.truncate()
-"
-    log "  Generated and stored credential secret in config cache."
-else
-    log "  Credential secret already set in config cache."
-fi
+log "Configuring MCP bearer auth token..."
+MCP_AUTH_TOKEN="$(config_get_or_gen "mcp.auth_token" "python3 -c 'import secrets; print(secrets.token_hex(32))'")"
 
-# ── 9. Node-RED Projects configuration ───────────────────────────────────────
+log "Configuring Node-RED admin password..."
+NODERED_ADMIN_USER="$(config_get_or_gen "nodered.admin_user" "echo admin")"
+NODERED_ADMIN_PW="$(config_get_or_gen "nodered.admin_password" "python3 -c 'import secrets; print(secrets.token_hex(24))'")"
+
+log "Configuring Node-RED /api/* password (used by MCP server)..."
+NODERED_HTTP_USER="$(config_get_or_gen "nodered.http_user" "echo dhcedge")"
+NODERED_HTTP_PW="$(config_get_or_gen "nodered.http_password" "python3 -c 'import secrets; print(secrets.token_hex(24))'")"
+
+chown "${DHC_USER}:${DHC_USER}" "${CONFIG_CACHE}"
+chmod 600 "${CONFIG_CACHE}"
+
+# ── 9. Node-RED Projects + auth configuration ───────────────────────────────
 
 log "Configuring Node-RED settings.js..."
 SETTINGS_JS="${NODE_RED_USER_DIR}/settings.js"
+
+# Locate bcryptjs — Node-RED ships it, and we need it to hash the admin +
+# httpNodeAuth passwords into settings.js. Fall back through common install
+# paths so this works on npm-global and userDir-local installs.
+BCRYPT_MODULE=""
+for path in \
+    "/usr/lib/node_modules/node-red/node_modules/bcryptjs" \
+    "/usr/local/lib/node_modules/node-red/node_modules/bcryptjs" \
+    "${NODE_RED_USER_DIR}/node_modules/bcryptjs"; do
+    [[ -d "$path" ]] && BCRYPT_MODULE="$path" && break
+done
+[[ -n "$BCRYPT_MODULE" ]] || die "bcryptjs not found under Node-RED — palette install may have failed."
+
+# hash_pw <plaintext> — echoes the bcrypt hash (Node-RED-compatible)
+hash_pw() {
+    local pw="$1"
+    node -e "
+        const bcrypt = require('${BCRYPT_MODULE}');
+        let data = '';
+        process.stdin.on('data', c => data += c);
+        process.stdin.on('end', () => {
+            bcrypt.hash(data, 8, (err, h) => {
+                if (err) { console.error(err); process.exit(1); }
+                process.stdout.write(h);
+            });
+        });
+    " <<< "$pw"
+}
 
 if [[ -f "$SETTINGS_JS" ]]; then
     # enable Projects feature
@@ -214,10 +268,41 @@ if [[ -f "$SETTINGS_JS" ]]; then
         # settings.js exists but no credentialSecret line — insert before module.exports closing
         sed -i "/module.exports/a\\    credentialSecret: \"${CRED_SECRET}\"," "$SETTINGS_JS"
     fi
-    log "  Projects enabled, credential secret set."
+
+    # adminAuth: idempotent — only inject if not already present. Rotating
+    # requires the operator to delete the existing adminAuth block first.
+    if grep -q 'adminAuth:' "$SETTINGS_JS"; then
+        log "  adminAuth already present in settings.js — not touching."
+    else
+        ADMIN_PW_HASH="$(hash_pw "$NODERED_ADMIN_PW")"
+        ADMIN_BLOCK="    adminAuth: {\n        type: \"credentials\",\n        users: [{ username: \"${NODERED_ADMIN_USER}\", password: \"${ADMIN_PW_HASH}\", permissions: \"*\" }]\n    },"
+        # insert before the closing brace of module.exports = {...}
+        awk -v block="$ADMIN_BLOCK" '
+            /module\.exports[[:space:]]*=[[:space:]]*\{/ && !inserted { print; print block; inserted=1; next }
+            { print }
+        ' "$SETTINGS_JS" > "${SETTINGS_JS}.tmp" && mv "${SETTINGS_JS}.tmp" "$SETTINGS_JS"
+        log "  adminAuth block inserted."
+    fi
+
+    # httpNodeAuth: idempotent — protects /api/* endpoints. MCP server uses
+    # basic auth with the plaintext pair from the config cache.
+    if grep -q 'httpNodeAuth:' "$SETTINGS_JS"; then
+        log "  httpNodeAuth already present in settings.js — not touching."
+    else
+        HTTP_PW_HASH="$(hash_pw "$NODERED_HTTP_PW")"
+        HTTP_BLOCK="    httpNodeAuth: { user: \"${NODERED_HTTP_USER}\", pass: \"${HTTP_PW_HASH}\" },"
+        awk -v block="$HTTP_BLOCK" '
+            /^module\.exports/ {in_block=1}
+            in_block && /^};?$/ && !inserted { print block; inserted=1 }
+            { print }
+        ' "$SETTINGS_JS" > "${SETTINGS_JS}.tmp" && mv "${SETTINGS_JS}.tmp" "$SETTINGS_JS"
+        log "  httpNodeAuth block inserted."
+    fi
+
+    log "  Projects enabled, credential secret set, adminAuth + httpNodeAuth configured."
 else
     log "  WARN: settings.js not found — Node-RED will generate it on first start."
-    log "  Re-run install.sh after first start to configure Projects."
+    log "  Re-run install.sh after first start to configure Projects + auth."
 fi
 
 chown -R "${DHC_USER}:${DHC_USER}" "${NODE_RED_USER_DIR}"
@@ -322,10 +407,20 @@ log "  2. Register Hue API key:"
 log "     http://192.168.1.15/debug/clip.html"
 log "  3. Install Node-RED Dashboard v2 in the Node-RED editor:"
 log "     http://<server-ip>:1880  → Manage palette → @flowfuse/node-red-dashboard"
+log "     (log in with the admin credentials below)"
 log "  4. Create your first Node-RED project:"
 log "     http://<server-ip>:1880 → Name it 'digitalhome-flows'"
-log "  5. Connect Claude to the MCP server:"
-log "     http://<server-ip>:8000/sse"
+log "  5. Connect Claude to the MCP server (Authorization header required):"
+log "     url:     http://<server-ip>:8000/sse"
+log "     header:  Authorization: Bearer ${MCP_AUTH_TOKEN}"
+log ""
+log "Credentials (also stored in ${CONFIG_CACHE}, mode 0600):"
+log "  Node-RED editor login  ${NODERED_ADMIN_USER} / ${NODERED_ADMIN_PW}"
+log "  Node-RED /api/* login  ${NODERED_HTTP_USER} / ${NODERED_HTTP_PW}"
+log "  MCP bearer token       ${MCP_AUTH_TOKEN}"
+log ""
+log "Save these somewhere safe. Retrieve later with:"
+log "  sudo dhcedge show-secrets"
 log ""
 if [[ "$INSTALL_MODE" == "stage" ]]; then
     log "Stage mode — services are DOWN. Use 'dhcedge start' to bring them up."

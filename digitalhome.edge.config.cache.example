@@ -1,13 +1,20 @@
 {
-  "version": 2,
+  "version": 3,
   "instance": {
     "id": "digitalhome-edge-01",
     "name": "My Digitalhome",
     "location": "Home"
   },
+  "mcp": {
+    "auth_token": ""
+  },
   "nodered": {
     "url": "http://localhost:1880",
-    "credential_secret": ""
+    "credential_secret": "",
+    "admin_user": "admin",
+    "admin_password": "",
+    "http_user": "dhcedge",
+    "http_password": ""
   },
   "cloud": {
     "api_url": "https://api.digitalhome.cloud",

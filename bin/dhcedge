@@ -9,6 +9,7 @@
 #   dhcedge logs [service]      Tail logs (nodered|mcp-server|all, default: all)
 #   dhcedge update-hosts        Generate /etc/hosts entries from config cache
 #   dhcedge show-config         Show config cache (secrets redacted)
+#   dhcedge show-secrets        Print MCP auth token + Node-RED credentials (sudo)
 
 set -euo pipefail
 
@@ -138,17 +139,41 @@ cmd_show_config() {
     [[ -f "$CONFIG_CACHE" ]] || die "Config cache not found: ${CONFIG_CACHE}"
 
     python3 -c "
-import json, copy
+import json
 with open('${CONFIG_CACHE}') as f:
     cfg = json.load(f)
 
+REDACTED_KEYS = {
+    'api_key', 'credential_secret', 'auth_token',
+    'admin_password', 'http_password', 'password',
+}
+
 def redact(obj):
     if isinstance(obj, dict):
-        return {k: '***' if k in ('api_key', 'credential_secret') and v else redact(v)
+        return {k: '***' if k in REDACTED_KEYS and v else redact(v)
                 for k, v in obj.items()}
     return obj
 
 print(json.dumps(redact(cfg), indent=2))
+"
+}
+
+cmd_show_secrets() {
+    require_sudo "show-secrets"
+    [[ -f "$CONFIG_CACHE" ]] || die "Config cache not found: ${CONFIG_CACHE}"
+
+    python3 -c "
+import json
+with open('${CONFIG_CACHE}') as f:
+    cfg = json.load(f)
+mcp = cfg.get('mcp', {})
+nr = cfg.get('nodered', {})
+print(f\"MCP bearer token       {mcp.get('auth_token','(unset)')}\")
+print(f\"Node-RED editor login  {nr.get('admin_user','(unset)')} / {nr.get('admin_password','(unset)')}\")
+print(f\"Node-RED /api/* login  {nr.get('http_user','(unset)')} / {nr.get('http_password','(unset)')}\")
+print()
+print('Use in Claude Desktop config:')
+print('  \"headers\": { \"Authorization\": \"Bearer ' + mcp.get('auth_token','<unset>') + '\" }')
 "
 }
 
@@ -163,6 +188,7 @@ cmd_help() {
     echo "  logs [service]      Tail logs (nodered|mcp-server|all)"
     echo "  update-hosts        Generate /etc/hosts from config cache (requires sudo)"
     echo "  show-config         Show config cache (secrets redacted)"
+    echo "  show-secrets        Print MCP token + Node-RED credentials (requires sudo)"
     echo "  help                Show this help"
 }
 
@@ -181,6 +207,7 @@ case "$1" in
     logs)         shift; cmd_logs "${1:-all}" ;;
     update-hosts) cmd_update_hosts ;;
     show-config)  cmd_show_config ;;
+    show-secrets) cmd_show_secrets ;;
     help|-h|--help) cmd_help ;;
     *) die "Unknown command: $1 (run 'dhcedge help')" ;;
 esac
