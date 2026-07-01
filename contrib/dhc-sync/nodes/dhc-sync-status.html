@@ -1,0 +1,51 @@
+<script type="text/javascript">
+    RED.nodes.registerType("dhc-sync-status", {
+        category: "digitalhome",
+        color:    "#B4CCF2",
+        defaults: {
+            name: { value: "" },
+            sync: { value: "", type: "dhc-sync-config", required: true }
+        },
+        inputs:  0,
+        outputs: 1,
+        icon: "font-awesome/fa-heartbeat",
+        label: function () { return this.name || "dhc sync status"; },
+        paletteLabel: "sync status"
+    });
+</script>
+
+<script type="text/html" data-template-name="dhc-sync-status">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-sync"><i class="fa fa-cloud"></i> Sync config</label>
+        <input type="text" id="node-input-sync">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="dhc-sync-status">
+    <p>Fires once on startup and again on every state machine transition.</p>
+
+    <h3>Output <code>msg.payload</code></h3>
+    <dl class="message-properties">
+        <dt>state <span class="property-type">string</span></dt>
+        <dd>one of <code>boot</code>, <code>unlinked</code>, <code>awaiting_approval</code>,
+        <code>linked</code>, <code>denied</code>, <code>error</code>.</dd>
+
+        <dt>user_code <span class="property-type">string?</span></dt>
+        <dd>set during <code>awaiting_approval</code>. Display on the dashboard so
+        the user can match it to what they see in the browser.</dd>
+
+        <dt>verification_uri_complete <span class="property-type">string?</span></dt>
+        <dd>full pairing URL including the user_code. Encode as a QR code in a
+        <code>ui-template</code> for the mobile-scan flow.</dd>
+
+        <dt>home_id / edge_id <span class="property-type">string?</span></dt>
+        <dd>set once <code>linked</code>.</dd>
+
+        <dt>error <span class="property-type">string?</span></dt>
+        <dd>set on <code>error</code> or <code>denied</code>. Human-facing message.</dd>
+    </dl>
+</script>

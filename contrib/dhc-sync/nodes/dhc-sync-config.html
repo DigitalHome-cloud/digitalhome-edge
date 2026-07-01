@@ -1,0 +1,58 @@
+<script type="text/javascript">
+    RED.nodes.registerType("dhc-sync-config", {
+        category: "config",
+        defaults: {
+            name:        { value: "" },
+            cloudApiUrl: { value: "https://api.digitalhome.cloud/edge/v1", required: true },
+            clientId:    { value: "digitalhome-edge", required: true },
+            scope:       { value: "edge.link edge.telemetry edge.cbox edge.lake" },
+            secretsDir:  { value: "/secrets", required: true },
+            configDir:   { value: "/config",  required: true }
+        },
+        label: function () {
+            return this.name || "dhc sync";
+        }
+    });
+</script>
+
+<script type="text/html" data-template-name="dhc-sync-config">
+    <div class="form-row">
+        <label for="node-config-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-config-input-name">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-cloudApiUrl"><i class="fa fa-cloud"></i> Cloud API URL</label>
+        <input type="text" id="node-config-input-cloudApiUrl">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-clientId"><i class="fa fa-id-card"></i> Client ID</label>
+        <input type="text" id="node-config-input-clientId" placeholder="digitalhome-edge">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-scope"><i class="fa fa-check"></i> Scopes</label>
+        <input type="text" id="node-config-input-scope">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-secretsDir"><i class="fa fa-key"></i> Secrets dir</label>
+        <input type="text" id="node-config-input-secretsDir" placeholder="/secrets">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-configDir"><i class="fa fa-cog"></i> Config dir</label>
+        <input type="text" id="node-config-input-configDir" placeholder="/config">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="dhc-sync-config">
+    <p>Drives the OAuth 2.0 Device Authorization Grant flow against
+    digitalhome.cloud, persists the resulting device_token, and runs the
+    telemetry loop. Singleton per Node-RED instance.</p>
+
+    <h3>Secret files (under <b>Secrets dir</b>)</h3>
+    <ul>
+        <li><code>device-token</code> — read on boot; written after successful token exchange.</li>
+        <li><code>edge-id</code> — cloud-issued stable id, written on link.</li>
+        <li><code>machine-id</code> — fallback if <code>/etc/machine-id</code> isn't readable.</li>
+    </ul>
+
+    <p>See <code>docs/specs/edge-cloud-api.md</code> for the full wire spec.</p>
+</script>

@@ -1,0 +1,12 @@
+[
+  {
+    "id": "dhc-sync-example-note",
+    "type": "comment",
+    "z": "flow-scaffold",
+    "name": "Pairing UI — scaffold placeholder",
+    "info": "Real dashboard flow lands in the next commit. It'll contain:\n\n- ui-base + ui-page 'Setup' (hidden when linked)\n- dhc-sync-status → function 'render QR data URL' → ui-template\n- ui-page 'Status' (visible when linked)\n- Restart pairing button → link out → back into the sync config's device-authz trigger\n\nImport via Node-RED menu → Import → paste this JSON.",
+    "x": 200,
+    "y": 100,
+    "wires": []
+  }
+]

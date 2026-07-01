@@ -1,0 +1,48 @@
+{
+  "name": "node-red-contrib-dhc-sync",
+  "version": "0.1.0",
+  "description": "OAuth 2.0 Device Authorization Grant (RFC 8628) client for the digitalhome.edge <-> digitalhome.cloud pairing flow, plus telemetry, cbox pull, and lake ingest. Ships companion @flowfuse/node-red-dashboard v2 flows for the pairing UI (QR code, user_code, live status).",
+  "keywords": [
+    "node-red",
+    "digitalhome",
+    "dhe",
+    "oauth",
+    "device-authorization"
+  ],
+  "license": "MIT",
+  "author": "digitalhome.cloud",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DigitalHome-cloud/digitalhome-edge",
+    "directory": "contrib/dhc-sync"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "node-red": "^4.0.9",
+    "node-red-node-test-helper": "^0.3.5",
+    "vitest": "^3.2.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "node-red": {
+    "version": ">=4.0.0",
+    "nodes": {
+      "dhc-sync-config":   "nodes/dhc-sync-config.js",
+      "dhc-sync-status":   "nodes/dhc-sync-status.js",
+      "dhc-sync-cbox-out": "nodes/dhc-sync-cbox-out.js"
+    }
+  },
+  "files": [
+    "nodes/",
+    "lib/",
+    "examples/",
+    "README.md"
+  ]
+}

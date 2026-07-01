@@ -1,0 +1,32 @@
+<script type="text/javascript">
+    RED.nodes.registerType("dhc-sync-cbox-out", {
+        category: "digitalhome",
+        color:    "#B4CCF2",
+        defaults: {
+            name: { value: "" },
+            sync: { value: "", type: "dhc-sync-config", required: true }
+        },
+        inputs:  0,
+        outputs: 1,
+        icon: "font-awesome/fa-download",
+        label: function () { return this.name || "cbox update"; },
+        paletteLabel: "cbox update"
+    });
+</script>
+
+<script type="text/html" data-template-name="dhc-sync-cbox-out">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-sync"><i class="fa fa-cloud"></i> Sync config</label>
+        <input type="text" id="node-input-sync">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="dhc-sync-cbox-out">
+    <p>Fires when the cloud signals a new C-BOX version is available for this
+    home. Wire into a flow that fetches <code>msg.payload.cbox_pull_url</code>,
+    validates the JSON-LD, rotates the local copy, and reloads the MCP catalog.</p>
+</script>
