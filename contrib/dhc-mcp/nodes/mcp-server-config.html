@@ -4,6 +4,8 @@
         defaults: {
             name:       { value: "" },
             mcpPath:    { value: "/mcp", required: true },
+            mcpHost:    { value: "0.0.0.0", required: true },
+            mcpPort:    { value: "8443", required: true, validate: RED.validators.number() },
             tokenFile:  { value: "/secrets/mcp-auth-token", required: true },
             cboxPath:   { value: "/cbox/cbox.jsonld", required: true },
             serverName: { value: "digitalhome-edge", required: true },
@@ -19,6 +21,14 @@
     <div class="form-row">
         <label for="node-config-input-name"><i class="fa fa-tag"></i> Name</label>
         <input type="text" id="node-config-input-name" placeholder="MCP server">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-mcpHost"><i class="fa fa-globe"></i> Bind host</label>
+        <input type="text" id="node-config-input-mcpHost" placeholder="0.0.0.0">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-mcpPort"><i class="fa fa-plug"></i> Port</label>
+        <input type="text" id="node-config-input-mcpPort" placeholder="8443">
     </div>
     <div class="form-row">
         <label for="node-config-input-mcpPath"><i class="fa fa-link"></i> URL prefix</label>

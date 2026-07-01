@@ -16,7 +16,9 @@
 "use strict";
 
 const fs     = require("fs");
+const http   = require("http");
 const crypto = require("crypto");
+const express = require("express");
 
 const { Server }             = require("@modelcontextprotocol/sdk/server/index.js");
 const { SSEServerTransport } = require("@modelcontextprotocol/sdk/server/sse.js");
@@ -39,6 +41,8 @@ module.exports = function (RED) {
         RED.nodes.createNode(this, cfg);
 
         this.mcpPath    = cfg.mcpPath    || "/mcp";
+        this.mcpHost    = cfg.mcpHost    || "0.0.0.0";
+        this.mcpPort    = parseInt(cfg.mcpPort || "8443", 10);
         this.tokenFile  = cfg.tokenFile  || "/secrets/mcp-auth-token";
         this.cboxPath   = cfg.cboxPath   || "/cbox/cbox.jsonld";
         this.serverName = cfg.serverName || "digitalhome-edge";
@@ -195,9 +199,16 @@ module.exports = function (RED) {
             }
         };
 
-        // ── HTTP endpoints on Node-RED's Express ───────────────────────────
-        const app = RED.httpNode;
-        const express = require("express");
+        // ── HTTP endpoints on our own Express + HTTP server ────────────────
+        //
+        // Cannot piggyback on RED.httpNode: it sits behind Node-RED's global
+        // httpNodeAuth (Basic auth) which MCP clients (Claude Desktop et al.)
+        // don't send. RED.httpAdmin is behind adminAuth (OAuth token) with the
+        // same problem. Only clean fix is our own listener with bearer auth.
+        //
+        // Binds to `mcpHost:mcpPort` — the container uses network_mode: host so
+        // the port is reachable on the LAN directly.
+        const app = express();
 
         const authMw = (req, res, next) => {
             const header = req.get("authorization") || "";
@@ -243,18 +254,23 @@ module.exports = function (RED) {
             }
         });
 
-        // POST /messages/:sessionId — client → server JSON-RPC message
+        // POST /messages?sessionId=... — client → server JSON-RPC message.
+        // Note: SSEServerTransport advertises sessionId as a query parameter
+        // (`?sessionId=…`) in the `endpoint` event. Route matches that shape.
         app.post(
-            `${node.mcpPath}/messages/:sessionId`,
+            `${node.mcpPath}/messages`,
             authMw,
-            express.raw({ type: "*/*", limit: "512kb" }),
+            express.json({ limit: "512kb" }),
             async (req, res) => {
-                const transport = node._transports.get(req.params.sessionId);
+                const sessionId = req.query.sessionId;
+                const transport = node._transports.get(sessionId);
                 if (!transport) {
-                    res.status(404).json({ error: "session not found" });
+                    res.status(404).json({ error: "session not found", sessionId });
                     return;
                 }
                 try {
+                    // Pass the already-parsed body so the SDK doesn't re-parse
+                    // the request stream (which would be empty after express.json).
                     await transport.handlePostMessage(req, res, req.body);
                 } catch (err) {
                     node.error(`handlePostMessage failed: ${err.message}`);
@@ -262,6 +278,15 @@ module.exports = function (RED) {
                 }
             }
         );
+
+        // Start listening.
+        node._httpServer = http.createServer(app);
+        node._httpServer.on("error", (err) => {
+            node.error(`MCP HTTP listen failed on ${node.mcpHost}:${node.mcpPort}: ${err.message}`);
+        });
+        node._httpServer.listen(node.mcpPort, node.mcpHost, () => {
+            node.log(`MCP server listening on ${node.mcpHost}:${node.mcpPort}${node.mcpPath}`);
+        });
 
         // ── shutdown ───────────────────────────────────────────────────────
         node.on("close", async (done) => {
@@ -275,6 +300,9 @@ module.exports = function (RED) {
             }
             node._pendingCalls.clear();
             try { await node._server.close(); } catch (_) {}
+            try {
+                await new Promise((res) => node._httpServer?.close(() => res()));
+            } catch (_) {}
             done();
         });
     }
