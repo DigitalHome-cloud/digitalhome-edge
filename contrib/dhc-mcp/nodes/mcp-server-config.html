@@ -1,0 +1,65 @@
+<script type="text/javascript">
+    RED.nodes.registerType("mcp-server-config", {
+        category: "config",
+        defaults: {
+            name:       { value: "" },
+            mcpPath:    { value: "/mcp", required: true },
+            tokenFile:  { value: "/secrets/mcp-auth-token", required: true },
+            cboxPath:   { value: "/cbox/cbox.jsonld", required: true },
+            serverName: { value: "digitalhome-edge", required: true },
+            serverVer:  { value: "0.1.0", required: true }
+        },
+        label: function () {
+            return this.name || this.serverName || "MCP server";
+        }
+    });
+</script>
+
+<script type="text/html" data-template-name="mcp-server-config">
+    <div class="form-row">
+        <label for="node-config-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-config-input-name" placeholder="MCP server">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-mcpPath"><i class="fa fa-link"></i> URL prefix</label>
+        <input type="text" id="node-config-input-mcpPath" placeholder="/mcp">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-tokenFile"><i class="fa fa-key"></i> Auth token file</label>
+        <input type="text" id="node-config-input-tokenFile" placeholder="/secrets/mcp-auth-token">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-cboxPath"><i class="fa fa-file"></i> C-BOX path</label>
+        <input type="text" id="node-config-input-cboxPath" placeholder="/cbox/cbox.jsonld">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-serverName"><i class="fa fa-server"></i> Server name</label>
+        <input type="text" id="node-config-input-serverName" placeholder="digitalhome-edge">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-serverVer"><i class="fa fa-tag"></i> Version</label>
+        <input type="text" id="node-config-input-serverVer" placeholder="0.1.0">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="mcp-server-config">
+    <p>Runs the MCP server inside Node-RED. Singleton per instance — every <code>mcp-tool-in</code>,
+    <code>mcp-resource-in</code>, and <code>mcp-response</code> node references this config node.</p>
+
+    <h3>Endpoints exposed</h3>
+    <ul>
+        <li><code>GET  {URL prefix}/sse</code> — SSE stream (Authorization: Bearer)</li>
+        <li><code>POST {URL prefix}/messages/{sessionId}</code> — client messages</li>
+        <li><code>GET  {URL prefix}/health</code> — healthcheck (no auth)</li>
+    </ul>
+
+    <h3>Bearer token</h3>
+    <p>Read from the file at <code>Auth token file</code> (default
+    <code>/secrets/mcp-auth-token</code>). The dhe bootstrap generates this file
+    on first install; rotate by overwriting the file and restarting Node-RED.</p>
+
+    <h3>C-BOX loader</h3>
+    <p>Parses the JSON-LD digital twin at <code>C-BOX path</code> and derives the
+    MCP catalog (tools + resources). Watches the file for changes and emits
+    <code>notifications/tools/list_changed</code> to connected clients.</p>
+</script>

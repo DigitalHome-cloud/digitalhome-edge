@@ -1,0 +1,70 @@
+<script type="text/javascript">
+    RED.nodes.registerType("mcp-tool-in", {
+        category: "digitalhome",
+        color:    "#B4CCF2",
+        defaults: {
+            name:        { value: "" },
+            server:      { value: "", type: "mcp-server-config", required: true },
+            toolName:    { value: "", required: true, validate: RED.validators.regex(/^[a-z][a-z0-9_]*$/) },
+            description: { value: "" },
+            inputSchema: { value: "{}" }
+        },
+        inputs:  0,
+        outputs: 1,
+        icon:    "font-awesome/fa-arrow-right",
+        label: function () {
+            return this.name || this.toolName || "mcp tool";
+        },
+        paletteLabel: "mcp tool in"
+    });
+</script>
+
+<script type="text/html" data-template-name="mcp-tool-in">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-server"><i class="fa fa-server"></i> MCP server</label>
+        <input type="text" id="node-input-server">
+    </div>
+    <div class="form-row">
+        <label for="node-input-toolName"><i class="fa fa-wrench"></i> Tool name</label>
+        <input type="text" id="node-input-toolName" placeholder="livingroom_lights_on">
+    </div>
+    <div class="form-row">
+        <label for="node-input-description"><i class="fa fa-comment"></i> Description</label>
+        <input type="text" id="node-input-description" placeholder="Turn the living room lights on">
+    </div>
+    <div class="form-row">
+        <label for="node-input-inputSchema"><i class="fa fa-list"></i> Input schema (JSON)</label>
+        <input type="text" id="node-input-inputSchema" placeholder='{"type":"object","properties":{}}'>
+    </div>
+</script>
+
+<script type="text/html" data-help-name="mcp-tool-in">
+    <p>Fires when Claude (or any MCP client) calls the tool named here.</p>
+
+    <h3>Outputs</h3>
+    <dl class="message-properties">
+        <dt>payload <span class="property-type">object</span></dt>
+        <dd>the arguments the client passed to the tool call, validated against
+            <b>Input schema</b>.</dd>
+
+        <dt>mcp.callId <span class="property-type">string</span></dt>
+        <dd>opaque id — must be preserved and returned by the paired
+            <code>mcp-response</code> node.</dd>
+
+        <dt>mcp.sessionId <span class="property-type">string</span></dt>
+        <dd>which SSE connection this call arrived on.</dd>
+
+        <dt>mcp.toolName <span class="property-type">string</span></dt>
+        <dd>the tool name configured on this node.</dd>
+    </dl>
+
+    <h3>Tool naming</h3>
+    <p>Lower snake_case. Should describe the action the caller is asking for
+    (e.g. <code>bedroom_thermostat_set</code>). At Phase 3+ these names are
+    auto-generated from the C-BOX; hand-authored tools also live here during
+    development.</p>
+</script>

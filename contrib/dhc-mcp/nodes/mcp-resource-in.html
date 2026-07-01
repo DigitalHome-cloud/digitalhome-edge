@@ -1,0 +1,49 @@
+<script type="text/javascript">
+    RED.nodes.registerType("mcp-resource-in", {
+        category: "digitalhome",
+        color:    "#B4CCF2",
+        defaults: {
+            name:    { value: "" },
+            server:  { value: "", type: "mcp-server-config", required: true },
+            uri:     { value: "", required: true },
+            resName: { value: "" },
+            mimeType:{ value: "application/json" }
+        },
+        inputs: 0,
+        outputs: 1,
+        icon: "font-awesome/fa-database",
+        label: function () {
+            return this.name || this.uri || "mcp resource";
+        },
+        paletteLabel: "mcp resource in"
+    });
+</script>
+
+<script type="text/html" data-template-name="mcp-resource-in">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-server"><i class="fa fa-server"></i> MCP server</label>
+        <input type="text" id="node-input-server">
+    </div>
+    <div class="form-row">
+        <label for="node-input-uri"><i class="fa fa-link"></i> URI</label>
+        <input type="text" id="node-input-uri" placeholder="slab:tempSensor_lr01">
+    </div>
+    <div class="form-row">
+        <label for="node-input-resName"><i class="fa fa-comment"></i> Human name</label>
+        <input type="text" id="node-input-resName" placeholder="Living room temperature">
+    </div>
+    <div class="form-row">
+        <label for="node-input-mimeType"><i class="fa fa-file"></i> MIME type</label>
+        <input type="text" id="node-input-mimeType" placeholder="application/json">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="mcp-resource-in">
+    <p>Fires when a client calls <code>resources/read</code> for the URI configured
+    here. Emits an empty message tagged with <code>msg.mcp.callId</code>; wire into a
+    flow that reads live device state and returns it via <code>mcp-response</code>.</p>
+</script>

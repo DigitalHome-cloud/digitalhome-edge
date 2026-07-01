@@ -1,0 +1,52 @@
+<script type="text/javascript">
+    RED.nodes.registerType("mcp-response", {
+        category: "digitalhome",
+        color:    "#B4CCF2",
+        defaults: {
+            name:      { value: "" },
+            server:    { value: "", type: "mcp-server-config", required: true },
+            errorFlag: { value: false }
+        },
+        inputs: 1,
+        outputs: 0,
+        icon: "font-awesome/fa-reply",
+        align: "right",
+        label: function () {
+            return this.name || "mcp response";
+        },
+        paletteLabel: "mcp response"
+    });
+</script>
+
+<script type="text/html" data-template-name="mcp-response">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-server"><i class="fa fa-server"></i> MCP server</label>
+        <input type="text" id="node-input-server">
+    </div>
+    <div class="form-row">
+        <label for="node-input-errorFlag"><i class="fa fa-exclamation"></i></label>
+        <input type="checkbox" id="node-input-errorFlag" style="width:auto"> Mark payload as error result
+    </div>
+</script>
+
+<script type="text/html" data-help-name="mcp-response">
+    <p>Terminates a tool or resource flow and returns the payload to the
+    originating MCP client.</p>
+
+    <h3>Required inputs</h3>
+    <dl class="message-properties">
+        <dt>payload <span class="property-type">any</span></dt>
+        <dd>the result to return.</dd>
+
+        <dt>mcp.callId <span class="property-type">string</span></dt>
+        <dd><b>must be preserved from the paired <code>mcp-tool-in</code> /
+        <code>mcp-resource-in</code></b>. Without it the response is dropped.</dd>
+
+        <dt class="optional">mcp.isError <span class="property-type">boolean</span></dt>
+        <dd>overrides the node-level <b>Mark payload as error result</b> option.</dd>
+    </dl>
+</script>
