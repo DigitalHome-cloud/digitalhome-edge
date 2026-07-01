@@ -269,9 +269,11 @@ if [[ -f "$SETTINGS_JS" ]]; then
         sed -i "/module.exports/a\\    credentialSecret: \"${CRED_SECRET}\"," "$SETTINGS_JS"
     fi
 
-    # adminAuth: idempotent — only inject if not already present. Rotating
-    # requires the operator to delete the existing adminAuth block first.
-    if grep -q 'adminAuth:' "$SETTINGS_JS"; then
+    # adminAuth: idempotent — only inject if not already present. Skip
+    # comment lines (Node-RED's default settings.js ships with a commented
+    # `//adminAuth: {…}` example that would otherwise match).
+    # Rotating requires the operator to delete the existing block first.
+    if grep -qE '^[[:space:]]*adminAuth:' "$SETTINGS_JS"; then
         log "  adminAuth already present in settings.js — not touching."
     else
         ADMIN_PW_HASH="$(hash_pw "$NODERED_ADMIN_PW")"
@@ -285,8 +287,9 @@ if [[ -f "$SETTINGS_JS" ]]; then
     fi
 
     # httpNodeAuth: idempotent — protects /api/* endpoints. MCP server uses
-    # basic auth with the plaintext pair from the config cache.
-    if grep -q 'httpNodeAuth:' "$SETTINGS_JS"; then
+    # basic auth with the plaintext pair from the config cache. Same
+    # comment-line filter as adminAuth.
+    if grep -qE '^[[:space:]]*httpNodeAuth:' "$SETTINGS_JS"; then
         log "  httpNodeAuth already present in settings.js — not touching."
     else
         HTTP_PW_HASH="$(hash_pw "$NODERED_HTTP_PW")"
