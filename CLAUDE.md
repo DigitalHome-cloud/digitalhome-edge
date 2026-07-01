@@ -5,8 +5,10 @@ This file provides guidance to Claude Code when working in this repository.
 ## What this repo is
 
 Application layer for **digitalhome.edge** — the local edge server running on
-`DLAB5-M92P-01` (192.168.1.10). Read `SPEC.md` for the full architecture before
-making any changes.
+`DLAB5-M92P-01` (192.168.1.10). Two specs to read before making changes:
+- `SPEC.md` — what is running today (current-state snapshot).
+- `docs/architecture.md` — the target architecture (SLAB5 spec) the product is migrating toward.
+- `docs/adr/0001-dhe-alignment.md` — locked decisions and phased migration plan.
 
 ## The golden rule
 

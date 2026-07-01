@@ -1,4 +1,10 @@
-# digitalhome-edge — Specification
+# digitalhome-edge — Current-State Specification
+
+> **This document describes what is running today.** For the *target*
+> architecture the product is migrating toward, see
+> [`docs/architecture.md`](docs/architecture.md) (SLAB5 spec). Deltas between
+> the two, and the migration plan, are captured in ADR
+> [`docs/adr/0001-dhe-alignment.md`](docs/adr/0001-dhe-alignment.md).
 
 ## Overview
 
