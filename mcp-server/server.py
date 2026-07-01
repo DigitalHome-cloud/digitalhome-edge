@@ -22,7 +22,11 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 log = logging.getLogger("digitalhome-edge")
 
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-_CONFIG_CACHE = os.path.join(_PROJECT_ROOT, "digitalhome.edge.config.cache")
+# DHE_CONFIG_CACHE lets Docker (and future orchestration) point the server at
+# a bind-mounted config path without touching the repo layout.
+_CONFIG_CACHE = os.environ.get("DHE_CONFIG_CACHE") or os.path.join(
+    _PROJECT_ROOT, "digitalhome.edge.config.cache"
+)
 
 _CONFIG_DEFAULTS: dict = {
     "version": 3,
@@ -445,5 +449,9 @@ if __name__ == "__main__":
 
     # SSE transport — Claude connects via HTTP, works locally and over LAN.
     # Bearer auth is enforced on every request via BearerAuthMiddleware.
+    # DHE_MCP_HOST / DHE_MCP_PORT let Docker Compose pick a different bind
+    # (e.g. :8443 for the side-by-side dhe stack) without editing this file.
+    bind_host = os.getenv("DHE_MCP_HOST", "0.0.0.0")
+    bind_port = int(os.getenv("DHE_MCP_PORT", "8000"))
     app = BearerAuthMiddleware(mcp.sse_app(), token=MCP_AUTH_TOKEN)
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=bind_host, port=bind_port)
