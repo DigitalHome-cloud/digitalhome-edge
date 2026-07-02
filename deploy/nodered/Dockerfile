@@ -30,9 +30,11 @@ RUN npm install --no-audit --no-fund --save --unsafe-perm \
       /opt/dhe-src/dhc-sync \
     && npm cache clean --force
 
-# Entrypoint bcrypts secrets into settings.js on first boot.
-# Build context is the repo root, so the path is prefixed with deploy/nodered/.
-COPY deploy/nodered/entrypoint.sh /usr/local/bin/dhe-entrypoint.sh
+# Entrypoint bcrypts secrets into settings.js and seeds the starter flow
+# on first boot. Build context is the repo root, so paths carry the
+# deploy/nodered/ prefix.
+COPY deploy/nodered/entrypoint.sh   /usr/local/bin/dhe-entrypoint.sh
+COPY deploy/nodered/starter-flow.json /usr/local/share/dhe/starter-flow.json
 RUN chmod +x /usr/local/bin/dhe-entrypoint.sh
 
 USER node-red

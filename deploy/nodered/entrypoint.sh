@@ -104,6 +104,14 @@ fi
 # Enable Projects — the default has `enabled: false` under editorTheme.projects
 sed -i -E "0,/enabled: false,/{s/enabled: false,/enabled: true,/}" "$SETTINGS"
 
+# Seed the starter flow on very first boot. If /data/flows.json exists,
+# leave it alone — the operator's own flows own the runtime from that point.
+STARTER_FLOW=/usr/local/share/dhe/starter-flow.json
+if [ ! -f /data/flows.json ] && [ -r "$STARTER_FLOW" ]; then
+    log "seeding /data/flows.json from starter-flow.json"
+    cp "$STARTER_FLOW" /data/flows.json
+fi
+
 log "settings.js ready — starting node-red"
 
 exec "$@"
