@@ -88,13 +88,23 @@ if [ -n "$ADMIN_PW" ] && ! grep -qE '^[[:space:]]*adminAuth:' "$SETTINGS"; then
     ' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
 fi
 
-# httpNodeAuth
+# httpNode auth — path-aware middleware.
+# Runs Basic auth against /api/* and other httpNode routes but exempts
+# /dashboard/* so the pairing UI works without credentials on the LAN.
+# Replaces the earlier plain-httpNodeAuth insertion; we strip any leftover
+# httpNodeAuth block from a prior boot to avoid double-walling.
 HTTP_USER=$(read_secret nodered-http-user dhcedge)
 HTTP_PW=$(read_secret nodered-http-password "")
-if [ -n "$HTTP_PW" ] && ! grep -qE '^[[:space:]]*httpNodeAuth:' "$SETTINGS"; then
-    log "inserting httpNodeAuth for user '$HTTP_USER'"
+
+if grep -qE '^[[:space:]]*httpNodeAuth:' "$SETTINGS"; then
+    log "stripping legacy httpNodeAuth block (replaced by httpNodeMiddleware)"
+    sed -i -E '/^[[:space:]]*httpNodeAuth:/d' "$SETTINGS"
+fi
+
+if [ -n "$HTTP_PW" ] && ! grep -qE '^[[:space:]]*httpNodeMiddleware:' "$SETTINGS"; then
+    log "inserting httpNodeMiddleware (Basic auth, /dashboard exempt) for user '$HTTP_USER'"
     HTTP_HASH=$(hash_pw "$HTTP_PW")
-    HTTP_BLOCK="    httpNodeAuth: { user: \"$HTTP_USER\", pass: \"$HTTP_HASH\" },"
+    HTTP_BLOCK="    httpNodeMiddleware: require(\"/usr/local/share/dhe/http-auth-middleware.js\")({ user: \"$HTTP_USER\", hash: \"$HTTP_HASH\" }),"
     awk -v block="$HTTP_BLOCK" '
         /module\.exports[[:space:]]*=[[:space:]]*\{/ && !inserted { print; print block; inserted=1; next }
         { print }
