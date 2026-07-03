@@ -148,10 +148,20 @@ module.exports = function (RED) {
         }
 
         async function onLinked(tokenResp) {
+            // Two-step registration: home_id may be null when the owner approved
+            // without picking a home. The box is fully LINKED — it has a valid
+            // device_token + edge_id — the home is a separate, later concern
+            // learned from the telemetry response (see telemetryTick below).
+            const homeId = normalizeHomeId(tokenResp.home_id);
             try {
                 await secretsLib.writeSecret(node.secretsDir, "device-token", tokenResp.access_token);
-                await secretsLib.writeSecret(node.secretsDir, "edge-id",     tokenResp.edge_id);
-                await secretsLib.writeSecret(node.secretsDir, "home-id",     tokenResp.home_id);
+                await secretsLib.writeSecret(node.secretsDir, "edge-id",      tokenResp.edge_id);
+                if (homeId) {
+                    await secretsLib.writeSecret(node.secretsDir, "home-id", homeId);
+                } else {
+                    // Don't write the literal string "null" — absent-file is truth.
+                    await secretsLib.deleteSecret(node.secretsDir, "home-id");
+                }
             } catch (err) {
                 node.error(`failed to persist secrets: ${err.message}`);
                 node.fsm.to(STATES.ERROR, { error: "secret persistence failed" });
@@ -159,13 +169,48 @@ module.exports = function (RED) {
             }
             node.fsm.to(STATES.LINKED, {
                 edge_id:          tokenResp.edge_id,
-                home_id:          tokenResp.home_id,
+                home_id:          homeId,
                 token_expires_at: Date.now() + (tokenResp.expires_in * 1000),
                 error:            null
             });
-            node.log(`Linked to ${tokenResp.home_id} as ${tokenResp.edge_id}`);
+            node.log(homeId
+                ? `Linked to ${homeId} as ${tokenResp.edge_id}`
+                : `Registered as ${tokenResp.edge_id} — awaiting home assignment`);
             resetBackoff();
             scheduleTelemetry(0, /* sendFull */ true);
+        }
+
+        // "" / null / undefined / the string "null" → null. Everything else → trimmed string.
+        function normalizeHomeId(v) {
+            if (v === null || v === undefined) return null;
+            const s = String(v).trim();
+            if (s === "" || s === "null") return null;
+            return s;
+        }
+
+        // Reconcile the cloud's authoritative home_id with what we have on
+        // disk + in the FSM. Runs on every telemetry 200. Fires on:
+        //   - registered-without-home → assigned to a home in Portal
+        //   - already-linked → owner unassigned in Portal
+        //   - already-linked → reassigned to a different home
+        async function reconcileHomeId(cloudHomeId) {
+            const next    = normalizeHomeId(cloudHomeId);
+            const current = normalizeHomeId(node.fsm.context.home_id);
+            if (next === current) return;
+            try {
+                if (next) {
+                    await secretsLib.writeSecret(node.secretsDir, "home-id", next);
+                    node.log(current
+                        ? `home reassigned: ${current} → ${next}`
+                        : `assigned to ${next}`);
+                } else {
+                    await secretsLib.deleteSecret(node.secretsDir, "home-id");
+                    node.log(`unassigned from ${current} — awaiting home in Portal`);
+                }
+                node.fsm.patchContext({ home_id: next });
+            } catch (err) {
+                node.warn(`home reconcile failed: ${err.message}`);
+            }
         }
 
         // ── telemetry loop ─────────────────────────────────────────────────
@@ -204,6 +249,11 @@ module.exports = function (RED) {
             if (res.kind === "ok") {
                 resetBackoff();
                 node.fsm.patchContext({ last_telemetry_at: new Date().toISOString() });
+                // The cloud is authoritative for home_id — it can change any time
+                // the owner reassigns from Portal → My Edges.
+                if (res.data && "home_id" in res.data) {
+                    await reconcileHomeId(res.data.home_id);
+                }
                 if (res.data?.cbox_updated) {
                     // TODO: emit to dhc-sync-cbox-out subscribers
                     node.log(`cbox_updated → ${res.data.cbox_version}`);
@@ -275,11 +325,13 @@ module.exports = function (RED) {
             try {
                 const deviceToken = await secretsLib.readSecret(node.secretsDir, "device-token");
                 const edgeId      = await secretsLib.readSecret(node.secretsDir, "edge-id");
-                const homeId      = await secretsLib.readSecret(node.secretsDir, "home-id");
+                const homeId      = normalizeHomeId(await secretsLib.readSecret(node.secretsDir, "home-id"));
 
                 if (deviceToken && edgeId) {
                     node.fsm.to(STATES.LINKED, { edge_id: edgeId, home_id: homeId, error: null });
-                    node.log(`boot: linked to ${homeId} as ${edgeId}`);
+                    node.log(homeId
+                        ? `boot: linked to ${homeId} as ${edgeId}`
+                        : `boot: registered as ${edgeId} — awaiting home assignment`);
                     scheduleTelemetry(0, true);
                 } else {
                     node.fsm.to(STATES.UNLINKED, { error: null });

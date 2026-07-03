@@ -24,7 +24,10 @@ services:
     network_mode: host
     volumes:
       - /opt/dhe/node-red-data:/data
-      - /opt/dhe/secrets:/secrets:ro
+      # dhc-sync writes device-token/edge-id/home-id here after pairing
+      # succeeds, so the mount must be writable. Host perms are still
+      # 0700 dir / 0600 files owned by uid 1000.
+      - /opt/dhe/secrets:/secrets
       - /opt/dhe/config:/config:ro
       - /opt/dhe/cbox:/cbox
       - /opt/dhe/timeseries:/timeseries
