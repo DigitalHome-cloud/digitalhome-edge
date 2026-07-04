@@ -9,6 +9,8 @@
 #   dhcedge start               Start the stack
 #   dhcedge stop                Stop the stack
 #   dhcedge restart             Restart the stack
+#   dhcedge build               Rebuild the image (palette/Dockerfile) + recreate container
+#   dhcedge flow-pull           Pull the latest flow into the Node-RED Project + reload
 #   dhcedge logs [service]      Tail container logs (default: node-red)
 #   dhcedge update-hosts        Generate /etc/hosts entries from config cache
 #   dhcedge show-config         Show config cache (secrets redacted)
@@ -30,6 +32,27 @@ require_sudo() {
     if [[ $EUID -ne 0 ]]; then
         die "This command requires sudo. Run: sudo dhcedge $*"
     fi
+}
+
+# Locate the repo checkout (needed for `build` — the image's build context is
+# the repo root, which holds contrib/ + deploy/nodered/Dockerfile). The deployed
+# /opt/dhe/docker-compose.yml can't build (its context lacks contrib/).
+find_repo() {
+    if [[ -n "${DHE_REPO:-}" && -f "${DHE_REPO}/deploy/docker-compose.yml" ]]; then
+        echo "$DHE_REPO"; return 0
+    fi
+    # relative to this script (works when dhcedge is run from / symlinked into the repo)
+    local self guess
+    self="$(realpath "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+    guess="$(cd "$(dirname "$self")/.." 2>/dev/null && pwd || true)"
+    if [[ -n "$guess" && -f "${guess}/deploy/docker-compose.yml" && -d "${guess}/contrib" ]]; then
+        echo "$guess"; return 0
+    fi
+    local d
+    for d in "$HOME/digitalhome-edge" "$HOME/digitalhomeCloud/digitalhome-edge" /opt/digitalhome-edge; do
+        [[ -f "${d}/deploy/docker-compose.yml" && -d "${d}/contrib" ]] && { echo "$d"; return 0; }
+    done
+    return 1
 }
 
 # ── commands ─────────────────────────────────────────────────────────────────
@@ -154,6 +177,57 @@ cmd_show_secrets() {
     printf "  \"headers\": { \"Authorization\": \"Bearer %s\" }\n" "$mcp_token"
 }
 
+cmd_build() {
+    require_sudo "build"
+    command -v docker &>/dev/null || die "docker is required but not found."
+    local repo
+    repo="$(find_repo)" || die "repo checkout not found. Set DHE_REPO=/path/to/digitalhome-edge and retry."
+    local repo_compose="${repo}/deploy/docker-compose.yml"
+
+    echo "Repo:    ${repo}"
+    echo "Pulling latest (repo + submodules) ..."
+    # Pull as the repo owner, not root, to keep file ownership sane.
+    local owner; owner="$(stat -c '%U' "$repo" 2>/dev/null || echo root)"
+    sudo -u "$owner" git -C "$repo" pull --recurse-submodules --ff-only \
+        || echo "WARN: git pull skipped/failed (local changes?) — building current checkout."
+
+    echo "Building image digitalhome/dhe-nodered:local from ${repo} ..."
+    docker compose -f "$repo_compose" build
+
+    # Keep the deployed compose in sync so compose/volume changes (e.g. the
+    # writable /opt/dhe/secrets mount) take effect on recreate.
+    if [[ -f "$COMPOSE_FILE" ]] && ! cmp -s "$repo_compose" "$COMPOSE_FILE"; then
+        echo "Updating ${COMPOSE_FILE} from repo ..."
+        cp "$repo_compose" "$COMPOSE_FILE"
+    fi
+
+    echo "Recreating container (new image + mounts) via dhe.service ..."
+    systemctl restart dhe.service
+    cmd_status
+}
+
+cmd_flow_pull() {
+    require_sudo "flow-pull"
+    local proj_root="${DHE_ROOT}/node-red-data/projects"
+    [[ -d "$proj_root" ]] || die "No Node-RED projects dir: ${proj_root} (Projects not enabled?)"
+
+    # The git-backed Node-RED Project = the dir containing a .git.
+    local proj
+    proj="$(find "$proj_root" -maxdepth 2 -name .git -printf '%h\n' 2>/dev/null | head -1)"
+    [[ -n "$proj" ]] || die "No git-backed project under ${proj_root}."
+
+    local owner; owner="$(stat -c '%U' "$proj" 2>/dev/null || echo root)"
+    echo "Pulling flow in ${proj} (as ${owner}) ..."
+    sudo -u "$owner" git -C "$proj" pull --ff-only \
+        || die "git pull failed — the project has local (editor) changes. Resolve in the Node-RED Projects UI, then retry."
+
+    echo "Reloading Node-RED flows (restart) ..."
+    systemctl restart dhe.service
+    cmd_status
+    echo ""
+    echo "Flow updated. Open the dashboard → Pairing page to pair."
+}
+
 cmd_help() {
     echo "Usage: dhcedge <command>"
     echo ""
@@ -162,6 +236,8 @@ cmd_help() {
     echo "  start               Start the stack (requires sudo)"
     echo "  stop                Stop the stack (requires sudo)"
     echo "  restart             Restart the stack (requires sudo)"
+    echo "  build               Rebuild the image + recreate the container (requires sudo)"
+    echo "  flow-pull           Pull latest flow into the Node-RED Project + reload (requires sudo)"
     echo "  logs [service]      Follow container logs (default: node-red)"
     echo "  update-hosts        Regenerate /etc/hosts from config cache (requires sudo)"
     echo "  show-config         Show config cache (secrets redacted)"
@@ -181,6 +257,8 @@ case "$1" in
     start)        cmd_start "$@" ;;
     stop)         cmd_stop "$@" ;;
     restart)      cmd_restart "$@" ;;
+    build)        cmd_build ;;
+    flow-pull)    cmd_flow_pull ;;
     logs)         shift; cmd_logs "${1:-node-red}" ;;
     update-hosts) cmd_update_hosts ;;
     show-config)  cmd_show_config ;;
