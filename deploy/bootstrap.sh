@@ -40,7 +40,7 @@ log "Bootstrapping ${DHE_ROOT} (nodered=${NODERED_PORT}, mcp=${MCP_PORT}, homeId
 
 # ── 1. directory skeleton ────────────────────────────────────────────────────
 
-mkdir -p "${DHE_ROOT}"/{config,secrets,node-red-data,cbox,cbox.history,cache,timeseries,db,logs}
+mkdir -p "${DHE_ROOT}"/{config,secrets,node-red-data,cbox,cbox.history,cache,timeseries,timeseries/cbox,timeseries/unmapped,db,logs}
 chmod 700 "${DHE_ROOT}/secrets"
 chmod 700 "${DHE_ROOT}/config"
 # node-red-data must be readable+writable by uid 1000 (the node-red user
@@ -59,6 +59,40 @@ EOF
 chmod 640 "${DHE_ROOT}/.env"
 
 install -m 644 "${SCRIPT_DIR}/dhe.service" /etc/systemd/system/dhe.service
+
+# Seed the starter A-Box vocabulary if the operator hasn't put one there.
+# The A-Box is the shared REC+Brick vocabulary the data-pipeline filter maps
+# incoming device fields against. Data, not code — edit /opt/dhe/cbox/abox.jsonld
+# to add capabilities without a container rebuild.
+if [[ -f "${SCRIPT_DIR}/cbox/abox.jsonld" && ! -f "${DHE_ROOT}/cbox/abox.jsonld" ]]; then
+    install -m 644 "${SCRIPT_DIR}/cbox/abox.jsonld" "${DHE_ROOT}/cbox/abox.jsonld"
+    log "  seeded cbox/abox.jsonld from repo starter"
+fi
+
+# Seed the Node-RED Project by cloning the flows submodule into userDir/projects/.
+# Uses a local clone from the check-out on disk so bootstrap works offline;
+# origin is rewritten to the GitHub URL from .gitmodules for future pushes.
+# If the submodule isn't checked out yet, warn — Node-RED will show the
+# first-run wizard on start and the operator can import the project by hand.
+NR_PROJECTS_DIR="${DHE_ROOT}/node-red-data/projects"
+NR_PROJECT_DIR="${NR_PROJECTS_DIR}/digitalhome-flows"
+NR_FLOWS_SRC="${REPO_DIR}/flows/digitalhome-flows"
+NR_FLOWS_REMOTE="$(git -C "${REPO_DIR}" config --file .gitmodules submodule.flows/digitalhome-flows.url 2>/dev/null || true)"
+
+if [[ ! -d "${NR_PROJECT_DIR}/.git" ]]; then
+    if [[ -e "${NR_FLOWS_SRC}/.git" ]]; then
+        mkdir -p "${NR_PROJECTS_DIR}"
+        log "  cloning flows submodule into node-red-data/projects/digitalhome-flows"
+        git clone -q "${NR_FLOWS_SRC}" "${NR_PROJECT_DIR}"
+        if [[ -n "${NR_FLOWS_REMOTE}" ]]; then
+            git -C "${NR_PROJECT_DIR}" remote set-url origin "${NR_FLOWS_REMOTE}"
+        fi
+    else
+        log "  WARN: flows submodule not checked out at ${NR_FLOWS_SRC}"
+        log "         run 'git submodule update --init --recursive' in the repo and re-run bootstrap"
+        log "         (or use the Node-RED first-run wizard to import the project manually)"
+    fi
+fi
 
 # ── 3. secrets: generate anything missing (idempotent) ───────────────────────
 

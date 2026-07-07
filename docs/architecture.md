@@ -36,6 +36,8 @@ The generic model, defined once. Based on REC (RealEstateCore) and Brick ontolog
 ### C-BOX (Digital Twin — Home-specific Instance Layer)
 The concrete digital twin of a specific home, serialised as a JSON-LD file. Instantiates the A-BOX classes with real rooms, real devices, real locations. One C-BOX per home (`{homeId}`). Designed in digitalhome.cloud, deployed to the runtime.
 
+> **Naming note — flagged.** The A-BOX / C-BOX terms above are **inverted** relative to standard Description Logic and the umbrella platform specs (`DH-SPEC-002/003/004` use T-Box = schema, A-Box = instance data). Edge repo keeps the local usage above for continuity with `adr/0001-dhe-alignment.md`; when talking to the Modeler/Designer teams, always disambiguate. Reconciling this is Open Decision #7 (see §12).
+
 Example C-BOX fragment:
 ```json
 {
@@ -376,6 +378,26 @@ Both are exposed in the MCP catalog, derived from the same C-BOX Point entity. T
 
 The sync-agent handles the data flow from edge to cloud lake: edge writes to `timeseries/points.db` first (zero cloud round-trip dependency for live control), then asynchronously flushes to S3 Parquet partitions. During a WAN outage, data accumulates locally and is flushed on reconnect (store-and-forward).
 
+### Phase-1 pipeline: device → A-Box filter → local buffer
+
+Landed in the stage branch (see `flows/digitalhome-flows/subflows/` + Data pipeline tab in `flows.json`). Covers Hue + Homematic today; Matter / SolarMan / SmartThings are placeholders on the same tab.
+
+```
+[Hue palette nodes]  ─┐
+                      ├─▶ [normalizer]  ─▶ [A-Box filter subflow]  ─▶ [buffer writer subflow]
+[CCU palette nodes]  ─┘                          │  1: mapped        (JSONL rotating daily)
+                                                 └─ 2: unmapped     ─▶ [buffer writer subflow]
+                                                                       (review queue)
+
+Vocabulary: /cbox/abox.jsonld  (hot-reloaded every 30s by the loader flow)
+Local buffer: /timeseries/cbox/YYYY-MM-DD.jsonl
+Review queue: /timeseries/unmapped/YYYY-MM-DD.jsonl
+```
+
+**Iterative loop.** The A-Box vocabulary lives at `/opt/dhe/cbox/abox.jsonld` (starter seeded from `deploy/cbox/abox.jsonld`). Adding a new device capability = adding one `dhc:sourceMap/*` entry — no code deploy. The loader detects file changes by content hash and swaps the global index; the filter picks it up on the next observation. Recurring `(source, field)` pairs in `/timeseries/unmapped/` are the backlog of vocabulary work.
+
+**Cloud shipment** (batch POST of buffered fragments) is deferred to a later phase; the wire needs to be agreed with the dark-factory cloud team first.
+
 ---
 
 ## 11. Provisioning (Claude Code Skill)
@@ -408,3 +430,4 @@ The edge box is provisioned via Claude Code running a predefined Skill:
 | 4 | **Local timeseries store** — SQLite or dedicated TSDB? | SQLite + time-series extension (lightweight) vs. InfluxDB/TimescaleDB (more capable) | Profile real workload on IBM dev box first |
 | 5 | **`DHC.Edge MCP in` granularity** — one node per Tool or generic router? | One node per Point (auto-generated) vs. single entry node + switch routing | Recommend one node per Point; matches "one Point = one flow fragment" principle |
 | 6 | **Cloud-executed homes: high-criticality tag handling** | Warn user at design time vs. block assignment | Recommend warn + require explicit acknowledgement |
+| 7 | **A-BOX / C-BOX naming reconciliation with umbrella specs** | Keep edge's inverted usage vs. rename to standard DL (T-Box/A-Box) | Two-way rename affects `contrib/dhc-mcp` config, `abox.jsonld` file, ADR-0001. Do it in one PR when someone owns the coordination. |

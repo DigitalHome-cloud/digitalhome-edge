@@ -282,7 +282,13 @@ free.
 - [x] OAuth device flow client (`dhc-sync`) + state machine + dashboard UI
 - [x] Edge ↔ Cloud API spec (`docs/specs/edge-cloud-api.md`)
 - [ ] Cloud side: `POST /edge/v1/device_authorization`, `/token`, `/telemetry` — implemented in `digitalhome-cloud-darkfactory`
-- [ ] Starter flow seeded on first boot (auto-instantiate `mcp-server-config` + `dhc-sync-config` + dashboard tabs)
+- [x] Starter flow seeded on first boot (auto-instantiate `mcp-server-config` + `dhc-sync-config` + dashboard tabs)
+- [x] Projects mode wired — `bootstrap.sh` clones `flows/digitalhome-flows` into `/opt/dhe/node-red-data/projects/`; `entrypoint.sh` seeds `.config.projects.json`. Fresh boxes boot into the active project instead of the first-run wizard.
+- [x] Phase-1 data pipeline: device → A-Box filter → local JSONL buffer. Covers Hue + Homematic. See `docs/architecture.md §10 "Phase-1 pipeline"`.
+- [ ] Phase-1 data pipeline: Matter / SolarMan / SmartThings source ingest (deferred).
+- [ ] Cloud shipment of buffered observations (batch POST of `/timeseries/cbox/*.jsonl`) — needs wire spec agreed with dark-factory cloud team.
+- [ ] Portal `/link` completion (approve/deny buttons wire the AppSync mutations, home picker). Spec: `docs/specs/portal-link-page.md`.
 - [ ] C-BOX generator + catalog dispatch inside `dhc-mcp` (Phase 3)
 - [ ] Assign room names to devices (currently all null)
 - [ ] Pipeline-based deployment: stage branch → DLAB5-W541-01, main → DLAB5-M92P-01
+- [ ] A-BOX / C-BOX naming reconciliation with umbrella platform specs (see `docs/architecture.md §12` Open Decision #7).
