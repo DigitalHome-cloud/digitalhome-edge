@@ -111,8 +111,15 @@ if [ -n "$HTTP_PW" ] && ! grep -qE '^[[:space:]]*httpNodeMiddleware:' "$SETTINGS
     ' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
 fi
 
-# Enable Projects — the default has `enabled: false` under editorTheme.projects
-sed -i -E "0,/enabled: false,/{s/enabled: false,/enabled: true,/}" "$SETTINGS"
+# Enable Projects — the default has `enabled: false` under editorTheme.projects.
+# The stock settings.js has several `enabled: false` blocks (runtimeState, projects,
+# …); an unanchored "first match" sed flips the wrong one and leaves Projects off,
+# so target the projects block specifically. Idempotent (no-op once true).
+awk '
+    /projects:[[:space:]]*\{/ { inproj=1 }
+    inproj && /enabled:[[:space:]]*false/ { sub(/enabled:[[:space:]]*false/, "enabled: true"); inproj=0 }
+    { print }
+' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
 
 # Seed .config.projects.json so Node-RED boots directly into the flows project
 # and skips the first-run wizard. Requires bootstrap.sh to have cloned the
