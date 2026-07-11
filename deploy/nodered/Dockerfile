@@ -14,10 +14,13 @@ USER root
 WORKDIR /usr/src/node-red
 
 # Third-party palettes — pinned versions (audit M-3, no ^ drift).
+# node-red-node-sqlite provides the `sqlite`/`sqlitedb` types used by the device
+# inventory flow; without it Node-RED blocks on "waiting for missing types".
 RUN npm install --no-audit --no-fund --save --unsafe-perm \
       node-red-contrib-ccu@3.4.2 \
       node-red-contrib-huemagic@4.2.2 \
       @flowfuse/node-red-dashboard@1.30.2 \
+      node-red-node-sqlite@1.1.0 \
     && npm cache clean --force
 
 # In-tree palettes — build context is the repo root; contrib/ lives beside deploy/.
