@@ -1,66 +1,15 @@
 {
     "@context": {
-        "brick": "https://brickschema.org/schema/Brick#",
-        "rec":   "https://w3id.org/rec#",
-        "dhc":   "https://schema.digitalhome.cloud/v0#",
-        "unit":  "http://qudt.org/vocab/unit/",
-        "xsd":   "http://www.w3.org/2001/XMLSchema#",
-        "capability": { "@id": "dhc:capability",   "@type": "@id" },
-        "brickClass": { "@id": "dhc:brickClass",   "@type": "@id" },
-        "valueType":  { "@id": "dhc:valueType",    "@type": "@id" },
-        "unit":       { "@id": "dhc:unit",         "@type": "@id" },
-        "coerce":     { "@id": "dhc:coerce" }
+        "dhc": "https://schema.digitalhome.cloud/v0#"
     },
 
     "@graph": [
-
         {
             "@id": "dhc:v0",
             "@type": "dhc:AboxVersion",
-            "dhc:version": "0.1.0",
-            "dhc:updated": "2026-07-07",
-            "dhc:note": "Starter A-Box. Iterate freely: add capabilities + sourceMap entries as unmapped/ shows new fields."
-        },
-
-        { "@id": "dhc:capability/on",          "@type": "dhc:Capability", "brickClass": "brick:On_Off_Command", "valueType": "xsd:boolean" },
-        { "@id": "dhc:capability/brightness",  "@type": "dhc:Capability", "brickClass": "brick:Luminance_Sensor", "valueType": "xsd:double", "unit": "unit:PERCENT" },
-        { "@id": "dhc:capability/color_temp",  "@type": "dhc:Capability", "brickClass": "brick:Illuminance_Sensor", "valueType": "xsd:integer", "unit": "unit:MilliK" },
-        { "@id": "dhc:capability/motion",      "@type": "dhc:Capability", "brickClass": "brick:Occupancy_Sensor", "valueType": "xsd:boolean" },
-        { "@id": "dhc:capability/temperature", "@type": "dhc:Capability", "brickClass": "brick:Temperature_Sensor", "valueType": "xsd:double", "unit": "unit:DEG_C" },
-        { "@id": "dhc:capability/humidity",    "@type": "dhc:Capability", "brickClass": "brick:Relative_Humidity_Sensor", "valueType": "xsd:double", "unit": "unit:PERCENT" },
-        { "@id": "dhc:capability/illuminance", "@type": "dhc:Capability", "brickClass": "brick:Illuminance_Sensor", "valueType": "xsd:double", "unit": "unit:LUX" },
-        { "@id": "dhc:capability/setpoint",    "@type": "dhc:Capability", "brickClass": "brick:Temperature_Setpoint", "valueType": "xsd:double", "unit": "unit:DEG_C" },
-        { "@id": "dhc:capability/battery",     "@type": "dhc:Capability", "brickClass": "brick:Battery_Voltage_Sensor", "valueType": "xsd:double", "unit": "unit:PERCENT" },
-        { "@id": "dhc:capability/reachable",   "@type": "dhc:Capability", "brickClass": "brick:Communication_Status", "valueType": "xsd:boolean" },
-        { "@id": "dhc:capability/window_open", "@type": "dhc:Capability", "brickClass": "brick:Window_Sensor", "valueType": "xsd:boolean" },
-        { "@id": "dhc:capability/power",       "@type": "dhc:Capability", "brickClass": "brick:Power_Sensor", "valueType": "xsd:double", "unit": "unit:W" },
-        { "@id": "dhc:capability/energy",      "@type": "dhc:Capability", "brickClass": "brick:Energy_Sensor", "valueType": "xsd:double", "unit": "unit:KiloW-HR" },
-
-        { "@id": "dhc:sourceMap/hue/on",          "@type": "dhc:SourceMap", "capability": "dhc:capability/on" },
-        { "@id": "dhc:sourceMap/hue/bri",         "@type": "dhc:SourceMap", "capability": "dhc:capability/brightness", "coerce": "byte-to-percent" },
-        { "@id": "dhc:sourceMap/hue/ct",          "@type": "dhc:SourceMap", "capability": "dhc:capability/color_temp",  "coerce": "mired-to-kelvin" },
-        { "@id": "dhc:sourceMap/hue/reachable",   "@type": "dhc:SourceMap", "capability": "dhc:capability/reachable" },
-        { "@id": "dhc:sourceMap/hue/presence",    "@type": "dhc:SourceMap", "capability": "dhc:capability/motion" },
-        { "@id": "dhc:sourceMap/hue/temperature", "@type": "dhc:SourceMap", "capability": "dhc:capability/temperature", "coerce": "centi-to-unit" },
-        { "@id": "dhc:sourceMap/hue/lightlevel",  "@type": "dhc:SourceMap", "capability": "dhc:capability/illuminance", "coerce": "hue-lightlevel-to-lux" },
-        { "@id": "dhc:sourceMap/hue/battery",     "@type": "dhc:SourceMap", "capability": "dhc:capability/battery" },
-
-        { "@id": "dhc:sourceMap/ccu/STATE",              "@type": "dhc:SourceMap", "capability": "dhc:capability/on" },
-        { "@id": "dhc:sourceMap/ccu/LEVEL",              "@type": "dhc:SourceMap", "capability": "dhc:capability/brightness", "coerce": "unit-to-percent" },
-        { "@id": "dhc:sourceMap/ccu/TEMPERATURE",        "@type": "dhc:SourceMap", "capability": "dhc:capability/temperature" },
-        { "@id": "dhc:sourceMap/ccu/ACTUAL_TEMPERATURE", "@type": "dhc:SourceMap", "capability": "dhc:capability/temperature" },
-        { "@id": "dhc:sourceMap/ccu/SET_TEMPERATURE",    "@type": "dhc:SourceMap", "capability": "dhc:capability/setpoint" },
-        { "@id": "dhc:sourceMap/ccu/SET_POINT_TEMPERATURE", "@type": "dhc:SourceMap", "capability": "dhc:capability/setpoint" },
-        { "@id": "dhc:sourceMap/ccu/HUMIDITY",            "@type": "dhc:SourceMap", "capability": "dhc:capability/humidity" },
-        { "@id": "dhc:sourceMap/ccu/ILLUMINATION",        "@type": "dhc:SourceMap", "capability": "dhc:capability/illuminance" },
-        { "@id": "dhc:sourceMap/ccu/BRIGHTNESS",          "@type": "dhc:SourceMap", "capability": "dhc:capability/illuminance" },
-        { "@id": "dhc:sourceMap/ccu/MOTION",              "@type": "dhc:SourceMap", "capability": "dhc:capability/motion" },
-        { "@id": "dhc:sourceMap/ccu/PRESENCE_DETECTION_STATE", "@type": "dhc:SourceMap", "capability": "dhc:capability/motion" },
-        { "@id": "dhc:sourceMap/ccu/OPERATING_VOLTAGE",   "@type": "dhc:SourceMap", "capability": "dhc:capability/battery" },
-        { "@id": "dhc:sourceMap/ccu/LOWBAT",              "@type": "dhc:SourceMap", "capability": "dhc:capability/battery", "coerce": "invert-boolean" },
-        { "@id": "dhc:sourceMap/ccu/UNREACH",             "@type": "dhc:SourceMap", "capability": "dhc:capability/reachable", "coerce": "invert-boolean" },
-        { "@id": "dhc:sourceMap/ccu/STATE_WINDOW",        "@type": "dhc:SourceMap", "capability": "dhc:capability/window_open" },
-        { "@id": "dhc:sourceMap/ccu/POWER",               "@type": "dhc:SourceMap", "capability": "dhc:capability/power" },
-        { "@id": "dhc:sourceMap/ccu/ENERGY_COUNTER",      "@type": "dhc:SourceMap", "capability": "dhc:capability/energy", "coerce": "wh-to-kwh" }
+            "dhc:version": "0.2.0",
+            "dhc:updated": "2026-07-11",
+            "dhc:note": "DEPRECATED as the source→Brick map. The inline dhc:capability/* and dhc:sourceMap/* entries were migrated to per-source mapping files under cbox/mappings/ (mappings-manifest.json + {hue,homematic,solarman}.map.json), which link native fields to the canonical T-BOX (repos/core/schema/tbox/Brick+extensions.ttl). The data pipeline now builds global.aboxIndex from those files, not this one. This stub is kept only so existing bootstrap/deploy references resolve; it carries no mappings."
+        }
     ]
 }

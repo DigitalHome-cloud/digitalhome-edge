@@ -1,0 +1,26 @@
+@prefix brick: <https://brickschema.org/schema/Brick#> .
+@prefix dhc:   <https://schema.digitalhome.cloud/v0#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
+@prefix qudt:  <http://qudt.org/schema/qudt/> .
+@prefix unit:  <http://qudt.org/vocab/unit/> .
+
+#
+# digitalhome.edge local T-BOX extensions.
+#
+# Terms the source mapping files (mappings/*.map.json) reference that are NOT present
+# in the canonical T-BOX (repos/core/schema/tbox/Brick+extensions.ttl). Each term here
+# is a candidate for promotion into Brick+extensions.ttl upstream in core.
+#
+# The mapping-index validator accepts a brickClass if it exists in the canonical T-BOX
+# OR is declared here.
+#
+
+dhc:State_Of_Charge_Sensor a owl:Class ;
+    rdfs:subClassOf brick:Point ;
+    rdfs:label "State of Charge Sensor"@en ;
+    skos:definition "A point that reports the state of charge (SOC) of an energy-storage device such as a battery, as a percentage of its usable capacity."@en ;
+    qudt:applicableUnit unit:PERCENT ;
+    rdfs:seeAlso brick:Battery_Energy_Storage_System ;
+    skos:note "Brick 1.3 core has no dedicated SOC point class (only Battery / Battery_Energy_Storage_System equipment). Introduced by the Solarman integration (batterySoc). Promote to core Brick+extensions.ttl." .

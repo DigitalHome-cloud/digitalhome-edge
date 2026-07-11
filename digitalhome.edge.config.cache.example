@@ -31,5 +31,13 @@
       "ip": "192.168.1.15",
       "api_key": ""
     }
+  },
+  "solar": {
+    "provider": "solarman",
+    "base_url": "https://globalapi.solarmanpv.com",
+    "app_id": "",
+    "email": "",
+    "poll_interval_s": 300,
+    "station_ids": []
   }
 }

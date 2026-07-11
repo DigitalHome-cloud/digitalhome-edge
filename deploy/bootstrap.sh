@@ -40,7 +40,7 @@ log "Bootstrapping ${DHE_ROOT} (nodered=${NODERED_PORT}, mcp=${MCP_PORT}, homeId
 
 # ── 1. directory skeleton ────────────────────────────────────────────────────
 
-mkdir -p "${DHE_ROOT}"/{config,secrets,node-red-data,cbox,cbox.history,cache,timeseries,timeseries/cbox,timeseries/unmapped,db,logs}
+mkdir -p "${DHE_ROOT}"/{config,secrets,node-red-data,cbox,cbox/mappings,cbox.history,cache,timeseries,timeseries/cbox,timeseries/unmapped,timeseries/raw,timeseries/raw/solarman,db,logs}
 chmod 700 "${DHE_ROOT}/secrets"
 chmod 700 "${DHE_ROOT}/config"
 # node-red-data must be readable+writable by uid 1000 (the node-red user
@@ -67,6 +67,20 @@ install -m 644 "${SCRIPT_DIR}/dhe.service" /etc/systemd/system/dhe.service
 if [[ -f "${SCRIPT_DIR}/cbox/abox.jsonld" && ! -f "${DHE_ROOT}/cbox/abox.jsonld" ]]; then
     install -m 644 "${SCRIPT_DIR}/cbox/abox.jsonld" "${DHE_ROOT}/cbox/abox.jsonld"
     log "  seeded cbox/abox.jsonld from repo starter"
+fi
+
+# Seed the source→T-BOX mapping files (mappings-manifest.json + *.map.json +
+# extensions.ttl). The data pipeline builds global.aboxIndex from these; edit
+# /opt/dhe/cbox/mappings/*.map.json to add device fields without a rebuild.
+if [[ -d "${SCRIPT_DIR}/cbox/mappings" ]]; then
+    for f in "${SCRIPT_DIR}"/cbox/mappings/*; do
+        [[ -e "$f" ]] || continue
+        dest="${DHE_ROOT}/cbox/mappings/$(basename "$f")"
+        if [[ ! -f "$dest" ]]; then
+            install -m 644 "$f" "$dest"
+            log "  seeded cbox/mappings/$(basename "$f")"
+        fi
+    done
 fi
 
 # Seed the Node-RED Project by cloning the flows submodule into userDir/projects/.
@@ -128,6 +142,23 @@ writable_literal nodered-http-user dhcedge
 writable_literal nodered-port "${NODERED_PORT}"
 writable_literal home-id "${HOME_ID}"
 
+# placeholder_secret <filename> — create an empty 0600 file the operator fills in.
+# Never bake real integration credentials into the repo (they'd be committed).
+placeholder_secret() {
+    local file="${DHE_ROOT}/secrets/$1"
+    if [[ ! -e "$file" ]]; then
+        : > "$file"
+        chmod 600 "$file"
+        log "  created empty secrets/$1 (fill in before enabling the integration)"
+    fi
+}
+
+# Solarman PV integration secrets — app secret + SHA-256 hex of the account
+# password (compute: printf '%s' 'ACCOUNT_PASSWORD' | sha256sum). Empty until set;
+# the flow degrades gracefully (logs 'creds missing') while unset.
+placeholder_secret solarman-app-secret
+placeholder_secret solarman-password-hash
+
 # ── 4. dhe.config.cache (server.py reads this) ───────────────────────────────
 
 CONFIG_CACHE="${DHE_ROOT}/config/dhe.config.cache"
@@ -155,6 +186,14 @@ cfg = {
     "devices": {
         "homematic-ccu": {"ip": "192.168.1.2"},
         "hue-bridge": {"ip": "192.168.1.15", "api_key": ""},
+    },
+    "solar": {
+        "provider": "solarman",
+        "base_url": "https://globalapi.solarmanpv.com",
+        "app_id": "",
+        "email": "",
+        "poll_interval_s": 300,
+        "station_ids": [],
     },
 }
 print(json.dumps(cfg, indent=2))

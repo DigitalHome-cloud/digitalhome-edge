@@ -1,0 +1,12 @@
+{
+    "$schema": "https://digitalhome.cloud/schema/mappings-manifest.schema.json",
+    "version": "1.0.0",
+    "description": "Registry of source -> T-BOX field mappings. Each entry links one integration's native field names to Brick classes in the canonical T-BOX (repos/core/schema/tbox/Brick+extensions.ttl). The Node-RED data pipeline (dp-fn-mapping-index) loads every file listed here at startup and flattens them into global.aboxIndex, consumed by the A-Box filter subflow.",
+    "tbox": "repos/core/schema/tbox/Brick+extensions.ttl",
+    "extensions": "extensions.ttl",
+    "sources": [
+        { "source": "hue",      "file": "hue.map.json",       "version": "0.1.0" },
+        { "source": "ccu",      "file": "homematic.map.json",  "version": "0.1.0" },
+        { "source": "solarman", "file": "solarman.map.json",   "version": "0.1.0" }
+    ]
+}

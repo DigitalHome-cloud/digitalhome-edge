@@ -1,0 +1,39 @@
+{
+    "source": "ccu",
+    "tbox": "Brick+extensions.ttl",
+    "version": "0.1.0",
+    "note": "Homematic CCU (node-red-contrib-ccu) datapoint names -> T-BOX. Migrated from the inline dhc:sourceMap/ccu/* entries in abox.jsonld (behaviour-preserving). Source key stays 'ccu' to match the normalizer output.",
+    "capabilities": {
+        "on":          { "brickClass": "brick:On_Off_Command",         "valueType": "xsd:boolean" },
+        "brightness":  { "brickClass": "brick:Luminance_Sensor",       "valueType": "xsd:double",  "unit": "unit:PERCENT" },
+        "temperature": { "brickClass": "brick:Temperature_Sensor",     "valueType": "xsd:double",  "unit": "unit:DEG_C" },
+        "setpoint":    { "brickClass": "brick:Temperature_Setpoint",   "valueType": "xsd:double",  "unit": "unit:DEG_C" },
+        "humidity":    { "brickClass": "brick:Relative_Humidity_Sensor","valueType": "xsd:double", "unit": "unit:PERCENT" },
+        "illuminance": { "brickClass": "brick:Illuminance_Sensor",     "valueType": "xsd:double",  "unit": "unit:LUX" },
+        "motion":      { "brickClass": "brick:Occupancy_Sensor",       "valueType": "xsd:boolean" },
+        "battery":     { "brickClass": "brick:Battery_Voltage_Sensor", "valueType": "xsd:double",  "unit": "unit:PERCENT" },
+        "reachable":   { "brickClass": "brick:Availability_Status",     "valueType": "xsd:boolean" },
+        "window_open": { "brickClass": "brick:Contact_Sensor",          "valueType": "xsd:boolean" },
+        "power":       { "brickClass": "brick:Power_Sensor",           "valueType": "xsd:double",  "unit": "unit:W" },
+        "energy":      { "brickClass": "brick:Energy_Sensor",          "valueType": "xsd:double",  "unit": "unit:KiloW-HR" }
+    },
+    "fields": {
+        "STATE":                   { "capability": "on" },
+        "LEVEL":                   { "capability": "brightness", "coerce": "unit-to-percent" },
+        "TEMPERATURE":             { "capability": "temperature" },
+        "ACTUAL_TEMPERATURE":      { "capability": "temperature" },
+        "SET_TEMPERATURE":         { "capability": "setpoint" },
+        "SET_POINT_TEMPERATURE":   { "capability": "setpoint" },
+        "HUMIDITY":                { "capability": "humidity" },
+        "ILLUMINATION":            { "capability": "illuminance" },
+        "BRIGHTNESS":              { "capability": "illuminance" },
+        "MOTION":                  { "capability": "motion" },
+        "PRESENCE_DETECTION_STATE":{ "capability": "motion" },
+        "OPERATING_VOLTAGE":       { "capability": "battery" },
+        "LOWBAT":                  { "capability": "battery",   "coerce": "invert-boolean" },
+        "UNREACH":                 { "capability": "reachable", "coerce": "invert-boolean" },
+        "STATE_WINDOW":            { "capability": "window_open" },
+        "POWER":                   { "capability": "power" },
+        "ENERGY_COUNTER":          { "capability": "energy",    "coerce": "wh-to-kwh" }
+    }
+}

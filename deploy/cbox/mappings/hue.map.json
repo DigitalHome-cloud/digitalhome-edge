@@ -1,0 +1,26 @@
+{
+    "source": "hue",
+    "tbox": "Brick+extensions.ttl",
+    "version": "0.1.0",
+    "note": "Philips Hue (huemagic palette) native state fields -> T-BOX. Migrated from the inline dhc:sourceMap/hue/* entries in abox.jsonld (behaviour-preserving).",
+    "capabilities": {
+        "on":          { "brickClass": "brick:On_Off_Command",         "valueType": "xsd:boolean" },
+        "brightness":  { "brickClass": "brick:Luminance_Sensor",       "valueType": "xsd:double",  "unit": "unit:PERCENT" },
+        "color_temp":  { "brickClass": "brick:Illuminance_Sensor",     "valueType": "xsd:integer", "unit": "unit:MilliK" },
+        "motion":      { "brickClass": "brick:Occupancy_Sensor",       "valueType": "xsd:boolean" },
+        "temperature": { "brickClass": "brick:Temperature_Sensor",     "valueType": "xsd:double",  "unit": "unit:DEG_C" },
+        "illuminance": { "brickClass": "brick:Illuminance_Sensor",     "valueType": "xsd:double",  "unit": "unit:LUX" },
+        "battery":     { "brickClass": "brick:Battery_Voltage_Sensor", "valueType": "xsd:double",  "unit": "unit:PERCENT" },
+        "reachable":   { "brickClass": "brick:Availability_Status",     "valueType": "xsd:boolean" }
+    },
+    "fields": {
+        "on":          { "capability": "on" },
+        "bri":         { "capability": "brightness",  "coerce": "byte-to-percent" },
+        "ct":          { "capability": "color_temp",  "coerce": "mired-to-kelvin" },
+        "reachable":   { "capability": "reachable" },
+        "presence":    { "capability": "motion" },
+        "temperature": { "capability": "temperature", "coerce": "centi-to-unit" },
+        "lightlevel":  { "capability": "illuminance", "coerce": "hue-lightlevel-to-lux" },
+        "battery":     { "capability": "battery" }
+    }
+}

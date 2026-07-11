@@ -285,7 +285,10 @@ free.
 - [x] Starter flow seeded on first boot (auto-instantiate `mcp-server-config` + `dhc-sync-config` + dashboard tabs)
 - [x] Projects mode wired — `bootstrap.sh` clones `flows/digitalhome-flows` into `/opt/dhe/node-red-data/projects/`; `entrypoint.sh` seeds `.config.projects.json`. Fresh boxes boot into the active project instead of the first-run wizard.
 - [x] Phase-1 data pipeline: device → A-Box filter → local JSONL buffer. Covers Hue + Homematic. See `docs/architecture.md §10 "Phase-1 pipeline"`.
-- [ ] Phase-1 data pipeline: Matter / SolarMan / SmartThings source ingest (deferred).
+- [x] Source→T-BOX mapping layer: per-integration `deploy/cbox/mappings/*.map.json` (hue, homematic, solarman) linking native fields to canonical Brick classes; replaces the inline `dhc:sourceMap/*` in `abox.jsonld`. See `docs/specs/solarman-edge-pipeline.md §2`.
+- [x] Phase-2 SolarMan ingest: token → station discovery → 5-min realTime poll → raw (bronze) + Brick observations (silver) + `global.solar_latest` (gold, `GET /api/solar/status`). See `docs/specs/solarman-edge-pipeline.md`.
+- [ ] Phase-1 data pipeline: Matter / SmartThings source ingest (deferred).
+- [ ] Raw (bronze) tier retention/pruning job for `/timeseries/raw/*`.
 - [ ] Cloud shipment of buffered observations (batch POST of `/timeseries/cbox/*.jsonl`) — needs wire spec agreed with dark-factory cloud team.
 - [ ] Portal `/link` completion (approve/deny buttons wire the AppSync mutations, home picker). Spec: `docs/specs/portal-link-page.md`.
 - [ ] C-BOX generator + catalog dispatch inside `dhc-mcp` (Phase 3)

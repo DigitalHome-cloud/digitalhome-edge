@@ -64,6 +64,18 @@ and writes to the `device` table. Returns `{synced: {ccu: N, hue: M, total: N+M}
 
 ---
 
+## Solar (PV)
+
+| Method | Endpoint | Returns |
+|---|---|---|
+| GET | `/api/solar/status` | Latest Solarman realtime snapshot: `{station_id, ts, data, observations}` from `global.solar_latest`. `503 {error}` until the first poll lands. |
+
+Backed by the Solarman ingest flow on `dp-tab` (token → station discovery → 5-min realTime
+poll). Raw responses land in `/timeseries/raw/solarman/`; Brick observations in
+`/timeseries/cbox/`. See `docs/specs/solarman-edge-pipeline.md`.
+
+---
+
 ## Cloud Sync
 
 | Method | Endpoint | Description |

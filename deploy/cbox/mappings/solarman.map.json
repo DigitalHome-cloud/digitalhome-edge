@@ -1,0 +1,24 @@
+{
+    "source": "solarman",
+    "tbox": "Brick+extensions.ttl",
+    "version": "0.1.0",
+    "note": "Solarman Global API (globalapi.solarmanpv.com) /station/v1.0/realTime fields -> T-BOX. Distinct capability per power role so generation/grid/load/battery do not collapse to one Active_Power_Sensor on the same device.",
+    "capabilities": {
+        "pv_generation_power": { "brickClass": "brick:Active_Power_Sensor",      "valueType": "xsd:double", "unit": "unit:W" },
+        "load_power":          { "brickClass": "brick:Electric_Power_Sensor",    "valueType": "xsd:double", "unit": "unit:W" },
+        "grid_power":          { "brickClass": "brick:Electric_Power_Sensor",    "valueType": "xsd:double", "unit": "unit:W" },
+        "battery_power":       { "brickClass": "brick:Active_Power_Sensor",      "valueType": "xsd:double", "unit": "unit:W" },
+        "battery_soc":         { "brickClass": "dhc:State_Of_Charge_Sensor",     "valueType": "xsd:double", "unit": "unit:PERCENT" },
+        "energy_today":        { "brickClass": "brick:Energy_Generation_Sensor", "valueType": "xsd:double", "unit": "unit:KiloW-HR" },
+        "energy_total":        { "brickClass": "brick:Energy_Generation_Sensor", "valueType": "xsd:double", "unit": "unit:KiloW-HR" }
+    },
+    "fields": {
+        "generationPower": { "capability": "pv_generation_power" },
+        "usePower":        { "capability": "load_power" },
+        "gridPower":       { "capability": "grid_power" },
+        "batteryPower":    { "capability": "battery_power" },
+        "batterySoc":      { "capability": "battery_soc" },
+        "generationValue": { "capability": "energy_today" },
+        "generationTotal": { "capability": "energy_total" }
+    }
+}

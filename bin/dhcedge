@@ -146,6 +146,7 @@ with open('${CONFIG_CACHE}') as f:
 REDACTED_KEYS = {
     'api_key', 'credential_secret', 'auth_token',
     'admin_password', 'http_password', 'password',
+    'email',
 }
 
 def redact(obj):
@@ -170,9 +171,15 @@ cmd_show_secrets() {
     nodered_http_user=$(cat "${secrets_dir}/nodered-http-user" 2>/dev/null || echo "dhcedge")
     nodered_http_pw=$(cat "${secrets_dir}/nodered-http-password" 2>/dev/null || echo "(unset)")
 
+    local solar_app_secret solar_pw_hash
+    solar_app_secret=$(cat "${secrets_dir}/solarman-app-secret" 2>/dev/null)
+    solar_pw_hash=$(cat "${secrets_dir}/solarman-password-hash" 2>/dev/null)
+
     printf "MCP bearer token       %s\n" "$mcp_token"
     printf "Node-RED editor login  %s / %s\n" "$nodered_admin_user" "$nodered_admin_pw"
     printf "Node-RED /api/* login  %s / %s\n" "$nodered_http_user" "$nodered_http_pw"
+    printf "Solarman app secret    %s\n" "${solar_app_secret:-(unset)}"
+    printf "Solarman password hash %s\n" "${solar_pw_hash:-(unset)}"
     printf "\nUse in Claude Desktop config:\n"
     printf "  \"headers\": { \"Authorization\": \"Bearer %s\" }\n" "$mcp_token"
 }
