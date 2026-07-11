@@ -104,11 +104,17 @@ class; `dhc:State_Of_Charge_Sensor` is defined in `extensions.ttl` for promotion
 - **Poll cadence: 5 min.** The Solarman cloud only refreshes every ~5 min, so faster polling
   returns identical values and wastes quota. No hard per-day cap is documented; budget stays
   at ≈1 realtime call/station/tick + one token refresh/day.
-- **Token:** `POST /account/v1.0/token?appId=…&language=en`, body `{appSecret, email,
-  password}` where `password` is the **lowercase SHA-256 hex** of the account password.
-  Returns a long-lived bearer (`expires_in` ~2 months). Cached in `global.solarman_token`,
-  refreshed once daily (boot + 24h inject) and force-refreshed on any `401`/`403` via a
-  `catch` node.
+- **Token / account linking (dashboard login):** the account is linked at runtime from the
+  Node-RED dashboard (**Connections → Solar → Connect**), not from a seeded file. The login
+  card sends `{email, password}` to `sm-fn-connect`, which SHA-256-hashes the password
+  in-process and calls `POST /account/v1.0/token?appId=…&language=en` with
+  `{appSecret, email, password:<hash>}`. On success the returned bearer + refresh token +
+  expiry are persisted to `/secrets/solarman-token.json` (0600) and the **plaintext password
+  is discarded — never written to disk**. `global.solarman_token` holds the live bearer.
+  Token validity is ~2 months; on boot `sm-fn-token-load` restores it. On `401`/`403` the
+  `catch` node clears the token/store and flips state to `UNLINKED`, so the dashboard shows
+  the login card again (a re-link, like dhc-sync). Link state machine:
+  `UNLINKED → CONNECTING → LINKED / ERROR`.
 - **Stations:** discovered once after token via `POST /station/v1.0/list` →
   `global.solarman_stations`.
 - **History:** `POST /station/v1.0/history` (`timeType` 1=5-min/day, 2=day, 3=month,
@@ -154,17 +160,34 @@ The `sf-buffer-writer` `format + route` allow-list accepts `cbox`, `unmapped`, a
 `sm-http-*` are `http request` nodes with `method:"use"` (URL/headers/body built by the
 preceding function). `sm-fn-ingest` output 2 wires into the existing `dp-abox-filter`.
 
-## 7. Config & secrets
+## 7. Config, secrets & dashboard
 
-- **Secrets** (`/opt/dhe/secrets/`, 0600): `solarman-app-secret`, `solarman-password-hash`
-  (SHA-256 hex of the account password — **never the plaintext**;
-  `printf '%s' 'PASSWORD' | sha256sum`). `bootstrap.sh` creates empty placeholders; the
-  operator fills them. The flow logs `creds missing` and idles while unset.
+- **Secrets** (`/opt/dhe/secrets/`, 0600): `solarman-app-secret` (app-level, seeded empty by
+  `bootstrap.sh`, filled by operator) and `solarman-token.json` (written at runtime by the
+  dashboard login — bearer + refresh + expiry + email; **no password**).
 - **Config cache** (`/opt/dhe/config/dhe.config.cache`), `solar` block:
-  `{ provider, base_url, app_id, email, poll_interval_s, station_ids }`. Seeded empty by
-  `bootstrap.sh`; mirrored (shape only) in `digitalhome.edge.config.cache.example`.
-- `dhcedge show-config` redacts `email`; `dhcedge show-secrets` surfaces the two Solarman
-  secrets. New flow code reads container mounts `/config/dhe.config.cache` and `/secrets/*`.
+  `{ provider, base_url, app_id, email, poll_interval_s, station_ids }`. `email` is populated
+  from the token store; `app_id` is set by the operator. Mirrored (shape only) in
+  `digitalhome.edge.config.cache.example`.
+- `dhcedge show-config` redacts `email`; `dhcedge show-secrets` shows the app secret and
+  whether an account is linked. Flow code reads container mounts `/config/dhe.config.cache`
+  and `/secrets/*`.
+
+### Dashboard information architecture (Node-RED Dashboard v2)
+
+Organised into three areas, each a set of pages/groups under `dhc-ui-base`:
+
+| Area | Page(s) | Cards |
+|---|---|---|
+| **Configuration** (links + config mgmt) | `Connections` (`/pairing`) · `Configuration` (`/config`) | Cloud setup/status (dhc-sync); **Solar Connect** (login) + **Solar Status**; redacted Edge Config viewer; Field Mappings table |
+| **Operator — native** (raw / bronze) | `Native Data` (`/native`) | Solar latest raw reading; Unmapped-fields review queue |
+| **Operator — mapped** (Brick / silver) | `Mapped Data` (`/mapped`) | Recent Brick observations; Pipeline throughput (mapped/unmapped, sources, mapping counts) |
+
+Read-only cards are driven by a single 3 s `sol-inject-refresh` timer fanning out to feeder
+functions that read `global.solar_latest`, `global.recent_mapped`/`recent_unmapped` (taps on
+the A-Box filter outputs), `global.aboxIndex`, and the config cache. The Solar Connect card
+uses the Dashboard-2 `send()` API (no HTTP endpoint, so no basic-auth friction) and receives
+link state via `sm-fn-state`.
 
 ## 8. Later: cloud upload (Phase 5, design only)
 

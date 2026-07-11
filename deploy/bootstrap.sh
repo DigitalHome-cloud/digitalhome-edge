@@ -153,11 +153,11 @@ placeholder_secret() {
     fi
 }
 
-# Solarman PV integration secrets — app secret + SHA-256 hex of the account
-# password (compute: printf '%s' 'ACCOUNT_PASSWORD' | sha256sum). Empty until set;
-# the flow degrades gracefully (logs 'creds missing') while unset.
+# Solarman PV integration: only the app secret is seeded here (app-level credential).
+# The account is linked at runtime via the Node-RED dashboard (Connections → Solar),
+# which exchanges email+password for a token written to /secrets/solarman-token.json.
+# The account password is never stored on disk.
 placeholder_secret solarman-app-secret
-placeholder_secret solarman-password-hash
 
 # ── 4. dhe.config.cache (server.py reads this) ───────────────────────────────
 
