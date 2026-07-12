@@ -76,8 +76,9 @@ build output. Serving is identical either way — that's the point.
 | POST | `/app-api/scan` | `{source}` → trigger the existing scan flow, return candidates |
 | POST | `/app-api/connect` | `{source, ip, email?, password?, user?, pass?}` → drive the existing connect functions |
 
-Prototype implements `GET /app-api/status` (read-only) first; scan/connect reuse the functions
-already built for the dashboard.
+Implemented: `GET /app-api/status`, `GET /app-api/ws` (WebSocket push), `POST /app-api/scan`,
+`POST /app-api/connect` (CCU token/session, Hue 30s pairing loop, Solar). The Gatsby app does
+onboarding natively via these — the iframe hybrid is retired (Dashboard 2.0 doesn't embed cleanly).
 
 ## Migration
 
