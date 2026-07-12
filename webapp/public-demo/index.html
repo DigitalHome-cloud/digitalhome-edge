@@ -12,7 +12,8 @@
   header h1 { font-size:18px; margin:0; font-weight:600; }
   header .dot { width:9px; height:9px; border-radius:50%; background:var(--off); }
   header .dot.live { background:var(--ok); box-shadow:0 0 8px var(--ok); }
-  main { max-width:960px; margin:0 auto; padding:24px; display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
+  main { max-width:1040px; margin:0 auto; padding:24px; }
+  .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
   .card h2 { font-size:14px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0 0 12px; display:flex; align-items:center; gap:8px; }
   .badge { font-size:12px; padding:2px 8px; border-radius:999px; background:rgba(100,116,139,.25); color:var(--muted); }
@@ -20,6 +21,9 @@
   .kv { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px dashed rgba(148,163,184,.12); }
   .kv:last-child { border:0; }
   .kv .k { color:var(--muted); } .kv .v { font-variant-numeric:tabular-nums; }
+  .section-title { color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.05em; margin:28px 4px 12px; }
+  iframe { width:100%; height:560px; border:1px solid var(--line); border-radius:12px; background:var(--card); }
+  .src { font-size:11px; color:var(--muted); }
   footer { text-align:center; color:var(--muted); font-size:12px; padding:18px; }
   a { color:var(--accent); }
 </style>
@@ -29,11 +33,18 @@
     <span class="dot" id="live"></span>
     <h1>digitalhome.edge</h1>
     <span class="badge" id="ts">connecting…</span>
+    <span class="src" id="src"></span>
   </header>
-  <main id="app">
-    <div class="card"><h2>Loading…</h2><div class="kv"><span class="k">Fetching</span><span class="v">/app-api/status</span></div></div>
+  <main>
+    <div class="grid" id="tiles">
+      <div class="card"><h2>Loading…</h2></div>
+    </div>
+
+    <!-- HYBRID: reuse the Node-RED Dashboard's interactive controls via iframe -->
+    <div class="section-title">Onboarding &amp; controls (Node-RED Dashboard, embedded)</div>
+    <iframe src="/ui/pairing" title="Node-RED controls" loading="lazy"></iframe>
   </main>
-  <footer>Served statically by Node-RED · <a href="/ui" target="_blank">open the Node-RED dashboard</a></footer>
+  <footer>Live data pushed over WebSocket · React shell (this page) + Node-RED controls (iframe) = hybrid</footer>
 
 <script>
   const fmt = (n) => (n === null || n === undefined) ? '—' : n;
@@ -43,46 +54,53 @@
       <span class="badge ${linked?'ok':''}">${linked ? 'connected' : (link && link.state) || 'unlinked'}</span></h2>
       ${rows.map(r => `<div class="kv"><span class="k">${r[0]}</span><span class="v">${fmt(r[1])}</span></div>`).join('')}</div>`;
   }
-  async function tick() {
-    try {
-      const r = await fetch('/app-api/status', { cache:'no-store' });
-      const s = await r.json();
-      document.getElementById('live').classList.add('live');
-      document.getElementById('ts').textContent = 'updated ' + new Date(s.ts).toLocaleTimeString();
-      const solar = s.solar || {}, ccu = s.ccu || {}, hue = s.hue || {}, pl = s.pipeline || {};
-      const sd = (solar.latest && solar.latest.data) || {};
-      const app = document.getElementById('app');
-      app.innerHTML =
-        tile('Solar (Solarman)', solar.link, [
-          ['Account', solar.link && solar.link.email],
-          ['PV power', sd.generationPower != null ? sd.generationPower + ' W' : '—'],
-          ['House load', sd.usePower != null ? sd.usePower + ' W' : '—'],
-          ['Battery SOC', sd.batterySoc != null ? sd.batterySoc + ' %' : '—'],
-          ['Today', sd.generationValue != null ? sd.generationValue + ' kWh' : '—'],
-        ]) +
-        tile('Homematic CCU', ccu.link, [
-          ['IP', ccu.link && ccu.link.ip],
-          ['Devices', ccu.latest && ccu.latest.devices],
-          ['Datapoints', ccu.latest && ccu.latest.datapoints],
-          ['Last read', ccu.latest && ccu.latest.ts ? ccu.latest.ts.slice(11,19)+'Z' : '—'],
-        ]) +
-        tile('Philips Hue', hue.link, [
-          ['IP', hue.link && hue.link.ip],
-          ['Sensors', hue.latest && hue.latest.sensors],
-          ['Lights', hue.latest && hue.latest.lights],
-          ['Last read', hue.latest && hue.latest.ts ? hue.latest.ts.slice(11,19)+'Z' : '—'],
-        ]) +
-        tile('Pipeline', { state: (pl.recent_mapped ? 'linked' : 'idle') }, [
-          ['Sources', (pl.sources||[]).join(', ') || '—'],
-          ['Mappings', pl.counts ? pl.counts.sourceMap + ' fields' : '—'],
-          ['Recent obs', pl.recent_mapped],
-        ]);
-    } catch (e) {
-      document.getElementById('live').classList.remove('live');
-      document.getElementById('ts').textContent = 'edge unreachable';
-    }
+  function render(s, source) {
+    document.getElementById('live').classList.add('live');
+    document.getElementById('ts').textContent = 'updated ' + new Date(s.ts).toLocaleTimeString();
+    document.getElementById('src').textContent = source;
+    const solar = s.solar||{}, ccu = s.ccu||{}, hue = s.hue||{}, pl = s.pipeline||{};
+    const sd = (solar.latest && solar.latest.data) || {};
+    document.getElementById('tiles').innerHTML =
+      tile('Solar (Solarman)', solar.link, [
+        ['Account', solar.link && solar.link.email],
+        ['PV power', sd.generationPower!=null ? sd.generationPower+' W' : '—'],
+        ['House load', sd.usePower!=null ? sd.usePower+' W' : '—'],
+        ['Battery SOC', sd.batterySoc!=null ? sd.batterySoc+' %' : '—'],
+        ['Today', sd.generationValue!=null ? sd.generationValue+' kWh' : '—'],
+      ]) +
+      tile('Homematic CCU', ccu.link, [
+        ['IP', ccu.link && ccu.link.ip],
+        ['Devices', ccu.latest && ccu.latest.devices],
+        ['Datapoints', ccu.latest && ccu.latest.datapoints],
+      ]) +
+      tile('Philips Hue', hue.link, [
+        ['IP', hue.link && hue.link.ip],
+        ['Sensors', hue.latest && hue.latest.sensors],
+        ['Lights', hue.latest && hue.latest.lights],
+      ]) +
+      tile('Pipeline', { state: pl.recent_mapped ? 'linked' : 'idle' }, [
+        ['Sources', (pl.sources||[]).join(', ') || '—'],
+        ['Mappings', pl.counts ? pl.counts.sourceMap+' fields' : '—'],
+        ['Recent obs', pl.recent_mapped],
+      ]);
   }
-  tick(); setInterval(tick, 3000);
+  function offline(){ document.getElementById('live').classList.remove('live'); document.getElementById('ts').textContent='edge unreachable'; }
+
+  // Primary: WebSocket push. Fallback: poll /app-api/status.
+  let pollTimer = null;
+  function startPolling(){ if(pollTimer) return; const p=async()=>{ try{ render(await (await fetch('/app-api/status',{cache:'no-store'})).json(),'polling'); }catch(e){ offline(); } }; p(); pollTimer=setInterval(p,3000); }
+  function stopPolling(){ if(pollTimer){ clearInterval(pollTimer); pollTimer=null; } }
+  function connectWS(){
+    try {
+      const proto = location.protocol==='https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(proto+'://'+location.host+'/app-api/ws');
+      ws.onmessage = (e)=>{ stopPolling(); try{ render(JSON.parse(e.data),'live · websocket'); }catch(_){} };
+      ws.onclose = ()=>{ startPolling(); setTimeout(connectWS, 5000); };
+      ws.onerror = ()=>{ ws.close(); };
+    } catch(e){ startPolling(); }
+  }
+  connectWS();
+  startPolling(); // until the first ws message arrives
 </script>
 </body>
 </html>
