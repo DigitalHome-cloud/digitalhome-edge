@@ -157,3 +157,10 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Home-specific discovered configuration (rooms/devices/scenes pulled from CCU/Hue).
+# Contains PII (room/person names, device serials) and the Hue bridge whitelist.
+# Lives at runtime under /opt/dhe/cbox/discovered/ — NEVER commit it to git.
+**/discovered/
+deploy/cbox/discovered/
+*.discovered.json
