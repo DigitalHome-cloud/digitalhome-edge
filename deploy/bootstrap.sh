@@ -224,7 +224,7 @@ find "${DHE_ROOT}/secrets" -type f -exec chmod 600 {} \;
 find "${DHE_ROOT}/config"  -type f -exec chmod 600 {} \;
 # node-red-data must also be writable by the container (settings.js gets
 # rewritten by the entrypoint on first start).
-chown -R 1000:1000 "${DHE_ROOT}/node-red-data" "${DHE_ROOT}/cbox" "${DHE_ROOT}/cbox.history" "${DHE_ROOT}/cache" "${DHE_ROOT}/timeseries" "${DHE_ROOT}/db" "${DHE_ROOT}/logs"
+chown -R 1000:1000 "${DHE_ROOT}/node-red-data" "${DHE_ROOT}/cbox" "${DHE_ROOT}/cbox.history" "${DHE_ROOT}/cache" "${DHE_ROOT}/timeseries" "${DHE_ROOT}/webapp" "${DHE_ROOT}/db" "${DHE_ROOT}/logs"
 
 # ── 6. done ──────────────────────────────────────────────────────────────────
 
