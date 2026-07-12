@@ -94,9 +94,15 @@ export default function Home() {
     else if (source === "solar") body = { source, email: f.solarEmail.trim(), password: f.solarPass };
     if (source !== "hue") say(source, "connecting…", "busy");
     try { const j = await api("connect", body); say(source, (j.ok ? "✓ " : "✗ ") + (j.message || (j.ok ? "connected" : "failed")), j.ok ? "ok" : "err"); if (source === "solar") setF((x) => ({ ...x, solarPass: "" })); } catch { say(source, "request failed", "err"); } };
+  const configPull = async (source) => { say(source + "cfg", "downloading config…", "busy");
+    try { const j = await api("config-pull", { source });
+      const parts = source === "ccu" ? `${j.rooms} rooms · ${j.functions} functions · ${j.devices} devices` : `${j.lights} lights · ${j.rooms} rooms · ${j.scenes} scenes · ${j.sensors} sensors`;
+      say(source + "cfg", (j.ok ? "✓ " : "✗ ") + (j.ok ? parts : j.message), j.ok ? "ok" : "err");
+    } catch { say(source + "cfg", "request failed", "err"); } };
 
   const solar = (s && s.solar) || {}, ccu = (s && s.ccu) || {}, hue = (s && s.hue) || {}, pl = (s && s.pipeline) || {};
   const sd = (solar.latest && solar.latest.data) || {};
+  const cfg = (s && s.config) || {};
   return (
     <>
       <header>
@@ -124,10 +130,12 @@ export default function Home() {
             <button className="ghost" onClick={() => scan("ccu")}>Scan network</button>
             <input placeholder="CCU IP" value={f.ccuIp} onChange={set("ccuIp")} />
             <input placeholder="API token (recommended)" value={f.ccuToken} onChange={set("ccuToken")} /><Msg m={msg.ccu} />
+            {ccu.link && ccu.link.state === "linked" && (<><button className="ghost" onClick={() => configPull("ccu")}>Update config</button><Msg m={msg.ccucfg || (cfg.ccu && { text: `${cfg.ccu.rooms} rooms · ${cfg.ccu.devices} devices`, cls: "" })} /></>)}
           </Onboard>
           <Onboard source="hue" link={hue.link} onConnect={() => connect("hue")} connectLabel="Connect (press bridge button)">
             <button className="ghost" onClick={() => scan("hue")}>Scan network</button>
             <input placeholder="Hue bridge IP" value={f.hueIp} onChange={set("hueIp")} /><Msg m={msg.hue} />
+            {hue.link && hue.link.state === "linked" && (<><button className="ghost" onClick={() => configPull("hue")}>Update config</button><Msg m={msg.huecfg || (cfg.hue && { text: `${cfg.hue.lights} lights · ${cfg.hue.rooms} rooms`, cls: "" })} /></>)}
           </Onboard>
         </div>
 
