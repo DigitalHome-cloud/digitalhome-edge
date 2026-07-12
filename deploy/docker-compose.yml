@@ -31,6 +31,8 @@ services:
       - /opt/dhe/config:/config:ro
       - /opt/dhe/cbox:/cbox
       - /opt/dhe/timeseries:/timeseries
+      # static Gatsby build for the edge web app, served by Node-RED httpStatic at /app
+      - /opt/dhe/webapp:/webapp:ro
     environment:
       - TZ=Europe/Brussels
     healthcheck:

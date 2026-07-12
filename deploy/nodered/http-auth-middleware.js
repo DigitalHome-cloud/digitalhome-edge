@@ -35,11 +35,14 @@ module.exports = function ({ user, hash }) {
     };
 
     return function dheHttpAuth(req, res, next) {
-        // Dashboard v2 and its socket.io channel run on httpNode too;
-        // both are intentionally open on the LAN so the pairing QR works
-        // without credentials. Use exact / prefix match so we don't
-        // accidentally whitelist e.g. /dashboard-admin.
-        if (req.path === "/dashboard" || req.path.startsWith("/dashboard/")) {
+        // LAN-open surfaces (no credentials): the Dashboard v2 (/ui, and its
+        // legacy /dashboard alias) + socket.io, the static edge web app (/app),
+        // and its headless onboarding API (/app-api). These are intentionally
+        // open on the local network so a homeowner can pair/onboard without
+        // credentials — the same posture as the pairing QR. Exact-or-prefix
+        // match so we don't whitelist e.g. /dashboard-admin or /appx.
+        const open = ["/dashboard", "/ui", "/app", "/app-api"];
+        if (open.some((p) => req.path === p || req.path.startsWith(p + "/"))) {
             return next();
         }
 

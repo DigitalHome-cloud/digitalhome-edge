@@ -111,6 +111,17 @@ if [ -n "$HTTP_PW" ] && ! grep -qE '^[[:space:]]*httpNodeMiddleware:' "$SETTINGS
     ' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
 fi
 
+# httpStatic — serve the edge web app (Gatsby static build) at /app from the
+# read-only /webapp mount. Idempotent: only insert if not already present.
+if ! grep -qE '^[[:space:]]*httpStatic:' "$SETTINGS"; then
+    log "inserting httpStatic (/webapp -> /app)"
+    HS_BLOCK='    httpStatic: [{ path: "/webapp", root: "/app/" }],'
+    awk -v block="$HS_BLOCK" '
+        /module\.exports[[:space:]]*=[[:space:]]*\{/ && !ins { print; print block; ins=1; next }
+        { print }
+    ' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+fi
+
 # Enable Projects — the default has `enabled: false` under editorTheme.projects.
 # The stock settings.js has several `enabled: false` blocks (runtimeState, projects,
 # …); an unanchored "first match" sed flips the wrong one and leaves Projects off,

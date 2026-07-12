@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>digitalhome.edge</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --line:rgba(148,163,184,.25); --fg:#e2e8f0; --muted:#94a3b8; --ok:#22c55e; --off:#64748b; --accent:#38bdf8; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  header { padding:20px 24px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .dot { width:9px; height:9px; border-radius:50%; background:var(--off); }
+  header .dot.live { background:var(--ok); box-shadow:0 0 8px var(--ok); }
+  main { max-width:960px; margin:0 auto; padding:24px; display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .card h2 { font-size:14px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0 0 12px; display:flex; align-items:center; gap:8px; }
+  .badge { font-size:12px; padding:2px 8px; border-radius:999px; background:rgba(100,116,139,.25); color:var(--muted); }
+  .badge.ok { background:rgba(34,197,94,.15); color:var(--ok); }
+  .kv { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px dashed rgba(148,163,184,.12); }
+  .kv:last-child { border:0; }
+  .kv .k { color:var(--muted); } .kv .v { font-variant-numeric:tabular-nums; }
+  footer { text-align:center; color:var(--muted); font-size:12px; padding:18px; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+  <header>
+    <span class="dot" id="live"></span>
+    <h1>digitalhome.edge</h1>
+    <span class="badge" id="ts">connecting…</span>
+  </header>
+  <main id="app">
+    <div class="card"><h2>Loading…</h2><div class="kv"><span class="k">Fetching</span><span class="v">/app-api/status</span></div></div>
+  </main>
+  <footer>Served statically by Node-RED · <a href="/ui" target="_blank">open the Node-RED dashboard</a></footer>
+
+<script>
+  const fmt = (n) => (n === null || n === undefined) ? '—' : n;
+  function tile(title, link, rows) {
+    const linked = link && link.state === 'linked';
+    return `<div class="card"><h2>${title}
+      <span class="badge ${linked?'ok':''}">${linked ? 'connected' : (link && link.state) || 'unlinked'}</span></h2>
+      ${rows.map(r => `<div class="kv"><span class="k">${r[0]}</span><span class="v">${fmt(r[1])}</span></div>`).join('')}</div>`;
+  }
+  async function tick() {
+    try {
+      const r = await fetch('/app-api/status', { cache:'no-store' });
+      const s = await r.json();
+      document.getElementById('live').classList.add('live');
+      document.getElementById('ts').textContent = 'updated ' + new Date(s.ts).toLocaleTimeString();
+      const solar = s.solar || {}, ccu = s.ccu || {}, hue = s.hue || {}, pl = s.pipeline || {};
+      const sd = (solar.latest && solar.latest.data) || {};
+      const app = document.getElementById('app');
+      app.innerHTML =
+        tile('Solar (Solarman)', solar.link, [
+          ['Account', solar.link && solar.link.email],
+          ['PV power', sd.generationPower != null ? sd.generationPower + ' W' : '—'],
+          ['House load', sd.usePower != null ? sd.usePower + ' W' : '—'],
+          ['Battery SOC', sd.batterySoc != null ? sd.batterySoc + ' %' : '—'],
+          ['Today', sd.generationValue != null ? sd.generationValue + ' kWh' : '—'],
+        ]) +
+        tile('Homematic CCU', ccu.link, [
+          ['IP', ccu.link && ccu.link.ip],
+          ['Devices', ccu.latest && ccu.latest.devices],
+          ['Datapoints', ccu.latest && ccu.latest.datapoints],
+          ['Last read', ccu.latest && ccu.latest.ts ? ccu.latest.ts.slice(11,19)+'Z' : '—'],
+        ]) +
+        tile('Philips Hue', hue.link, [
+          ['IP', hue.link && hue.link.ip],
+          ['Sensors', hue.latest && hue.latest.sensors],
+          ['Lights', hue.latest && hue.latest.lights],
+          ['Last read', hue.latest && hue.latest.ts ? hue.latest.ts.slice(11,19)+'Z' : '—'],
+        ]) +
+        tile('Pipeline', { state: (pl.recent_mapped ? 'linked' : 'idle') }, [
+          ['Sources', (pl.sources||[]).join(', ') || '—'],
+          ['Mappings', pl.counts ? pl.counts.sourceMap + ' fields' : '—'],
+          ['Recent obs', pl.recent_mapped],
+        ]);
+    } catch (e) {
+      document.getElementById('live').classList.remove('live');
+      document.getElementById('ts').textContent = 'edge unreachable';
+    }
+  }
+  tick(); setInterval(tick, 3000);
+</script>
+</body>
+</html>

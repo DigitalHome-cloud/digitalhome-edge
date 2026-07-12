@@ -40,7 +40,7 @@ log "Bootstrapping ${DHE_ROOT} (nodered=${NODERED_PORT}, mcp=${MCP_PORT}, homeId
 
 # ── 1. directory skeleton ────────────────────────────────────────────────────
 
-mkdir -p "${DHE_ROOT}"/{config,secrets,node-red-data,cbox,cbox/mappings,cbox.history,cache,timeseries,timeseries/cbox,timeseries/unmapped,timeseries/raw,timeseries/raw/solarman,db,logs}
+mkdir -p "${DHE_ROOT}"/{config,secrets,node-red-data,cbox,cbox/mappings,cbox.history,cache,timeseries,timeseries/cbox,timeseries/unmapped,timeseries/raw,timeseries/raw/solarman,webapp,db,logs}
 chmod 700 "${DHE_ROOT}/secrets"
 chmod 700 "${DHE_ROOT}/config"
 # node-red-data must be readable+writable by uid 1000 (the node-red user
@@ -67,6 +67,14 @@ install -m 644 "${SCRIPT_DIR}/dhe.service" /etc/systemd/system/dhe.service
 if [[ -f "${SCRIPT_DIR}/cbox/abox.jsonld" && ! -f "${DHE_ROOT}/cbox/abox.jsonld" ]]; then
     install -m 644 "${SCRIPT_DIR}/cbox/abox.jsonld" "${DHE_ROOT}/cbox/abox.jsonld"
     log "  seeded cbox/abox.jsonld from repo starter"
+fi
+
+# Seed the edge web app (Gatsby static build) served by Node-RED at /app.
+# Ships the dependency-free prototype (webapp/public-demo) until CI copies the
+# real `gatsby build` output here. Only seeds when /opt/dhe/webapp is empty.
+if [[ -d "${REPO_DIR}/webapp/public-demo" ]] && [[ -z "$(ls -A "${DHE_ROOT}/webapp" 2>/dev/null)" ]]; then
+    cp -r "${REPO_DIR}"/webapp/public-demo/* "${DHE_ROOT}/webapp/"
+    log "  seeded webapp/ from webapp/public-demo (prototype)"
 fi
 
 # Seed the source→T-BOX mapping files (mappings-manifest.json + *.map.json +
