@@ -1,0 +1,44 @@
+name: edge webapp build
+
+# Builds the Gatsby edge web app (webapp/) into a static bundle and uploads it as
+# an artifact. The edge pulls + deploys it via `dhcedge webapp-pull` (which can
+# also build locally on a dev/stage box). Node-RED serves the result at /app.
+
+on:
+  push:
+    branches: [stage, main]
+    paths:
+      - "webapp/**"
+      - ".github/workflows/webapp-build.yml"
+  pull_request:
+    paths:
+      - "webapp/**"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webapp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build (gatsby build --prefix-paths → public/, pathPrefix=/app)
+        run: npx gatsby build --prefix-paths
+        env:
+          GATSBY_TELEMETRY_DISABLED: "1"
+
+      - name: Upload static bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: edge-webapp
+          path: webapp/public
+          if-no-files-found: error

@@ -239,6 +239,44 @@ cmd_flow_pull() {
     echo "Flow updated. Open the dashboard → Pairing page to pair."
 }
 
+cmd_webapp_pull() {
+    # Build (if the toolchain is present) and deploy the edge web app (Gatsby) to
+    # /opt/dhe/webapp, which Node-RED serves statically at /app. No sudo and no
+    # container restart needed — /opt/dhe/webapp is owned by uid 1000 and httpStatic
+    # serves straight from the bind-mount.
+    local repo webdir dest src
+    repo="$(find_repo)" || die "repo checkout not found. Set DHE_REPO=/path/to/digitalhome-edge and retry."
+    webdir="${repo}/webapp"
+    [[ -d "$webdir" ]] || die "no webapp/ directory in ${repo}"
+    dest="${DHE_ROOT}/webapp"
+    mkdir -p "$dest" 2>/dev/null || true
+    [[ -w "$dest" ]] || die "${dest} not writable — run: sudo chown -R 1000:1000 ${dest}"
+
+    echo "Pulling ${repo} ..."
+    git -C "$repo" pull --ff-only 2>/dev/null || echo "WARN: git pull skipped (local changes?) — deploying current checkout."
+
+    src="${webdir}/public-demo"
+    if command -v npm &>/dev/null; then
+        echo "Building Gatsby app (npm install + gatsby build --prefix-paths) — this can take a few minutes ..."
+        if ( cd "$webdir" && npm install --no-audit --no-fund --loglevel=error && npx gatsby build --prefix-paths ); then
+            src="${webdir}/public"
+        else
+            echo "WARN: gatsby build failed — falling back to the prebuilt public-demo."
+        fi
+    else
+        echo "npm not found — deploying the prebuilt public-demo (static)."
+    fi
+    [[ -d "$src" ]] || die "nothing to deploy: ${src} is missing"
+
+    echo "Deploying ${src} -> ${dest} ..."
+    if command -v rsync &>/dev/null; then
+        rsync -a --delete "${src}/" "${dest}/"
+    else
+        rm -rf "${dest:?}/"* && cp -r "${src}/." "${dest}/"
+    fi
+    echo "Edge web app updated — open http://<edge>:${NODERED_PORT:-1880}/app (no restart needed)."
+}
+
 cmd_help() {
     echo "Usage: dhcedge <command>"
     echo ""
@@ -249,6 +287,7 @@ cmd_help() {
     echo "  restart             Restart the stack (requires sudo)"
     echo "  build               Rebuild the image + recreate the container (requires sudo)"
     echo "  flow-pull           Pull latest flow into the Node-RED Project + reload (requires sudo)"
+    echo "  webapp-pull         Build the Gatsby edge app + deploy to /app (no sudo, no restart)"
     echo "  logs [service]      Follow container logs (default: node-red)"
     echo "  update-hosts        Regenerate /etc/hosts from config cache (requires sudo)"
     echo "  show-config         Show config cache (secrets redacted)"
@@ -270,6 +309,7 @@ case "$1" in
     restart)      cmd_restart "$@" ;;
     build)        cmd_build ;;
     flow-pull)    cmd_flow_pull ;;
+    webapp-pull)  cmd_webapp_pull ;;
     logs)         shift; cmd_logs "${1:-nodered}" ;;
     update-hosts) cmd_update_hosts ;;
     show-config)  cmd_show_config ;;
