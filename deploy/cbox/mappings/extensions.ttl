@@ -24,3 +24,9 @@ dhc:State_Of_Charge_Sensor a owl:Class ;
     qudt:applicableUnit unit:PERCENT ;
     rdfs:seeAlso brick:Battery_Energy_Storage_System ;
     skos:note "Brick 1.3 core has no dedicated SOC point class (only Battery / Battery_Energy_Storage_System equipment). Introduced by the Solarman integration (batterySoc). Promote to core Brick+extensions.ttl." .
+
+dhc:Signal_Strength_Sensor a owl:Class ;
+    rdfs:subClassOf brick:Point ;
+    rdfs:label "Signal Strength Sensor"@en ;
+    skos:definition "A point reporting received radio signal strength (RSSI), e.g. a Homematic device's RSSI_DEVICE/RSSI_PEER, typically in dBm."@en ;
+    skos:note "No core-Brick RSSI point class; introduced by the Homematic integration. Candidate for promotion to core Brick+extensions.ttl." .
