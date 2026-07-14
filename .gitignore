@@ -164,3 +164,9 @@ vite.config.ts.timestamp-*
 **/discovered/
 deploy/cbox/discovered/
 *.discovered.json
+
+# Generated per-home digital twin (rooms/devices/points) — PII (room/person names).
+# Runtime-only at /opt/dhe/cbox/cbox.jsonld; never commit.
+deploy/cbox/cbox.jsonld
+deploy/cbox/cbox.history/
+*.cbox.jsonld

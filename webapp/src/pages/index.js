@@ -99,10 +99,14 @@ export default function Home() {
       const parts = source === "ccu" ? `${j.rooms} rooms · ${j.functions} functions · ${j.devices} devices` : `${j.lights} lights · ${j.rooms} rooms · ${j.scenes} scenes · ${j.sensors} sensors`;
       say(source + "cfg", (j.ok ? "✓ " : "✗ ") + (j.ok ? parts : j.message), j.ok ? "ok" : "err");
     } catch { say(source + "cfg", "request failed", "err"); } };
+  const genCbox = async () => { say("cbox", "generating digital twin…", "busy");
+    try { const j = await api("cbox-generate", {}); say("cbox", (j.ok ? "✓ " : "✗ ") + (j.ok ? `${j.rooms} rooms · ${j.devices} devices · ${j.points} points` : j.message), j.ok ? "ok" : "err"); }
+    catch { say("cbox", "request failed", "err"); } };
 
   const solar = (s && s.solar) || {}, ccu = (s && s.ccu) || {}, hue = (s && s.hue) || {}, pl = (s && s.pipeline) || {};
   const sd = (solar.latest && solar.latest.data) || {};
   const cfg = (s && s.config) || {};
+  const cbox = (s && s.cbox) || null;
   return (
     <>
       <header>
@@ -137,6 +141,15 @@ export default function Home() {
             <input placeholder="Hue bridge IP" value={f.hueIp} onChange={set("hueIp")} /><Msg m={msg.hue} />
             {hue.link && hue.link.state === "linked" && (<><button className="ghost" onClick={() => configPull("hue")}>Update config</button><Msg m={msg.huecfg || (cfg.hue && { text: `${cfg.hue.lights} lights · ${cfg.hue.rooms} rooms`, cls: "" })} /></>)}
           </Onboard>
+        </div>
+
+        <div className="section-title">Digital twin (C-BOX)
+          <button className="ghost" style={{ marginLeft: 12 }} onClick={genCbox}>Generate C-BOX</button>
+          {cbox && <a className="src" style={{ marginLeft: 10 }} href="/app-api/cbox" target="_blank" rel="noreferrer">download JSON-LD</a>}
+        </div>
+        <div className="card">
+          <Msg m={msg.cbox || (cbox && { text: `${cbox.rooms} rooms · ${cbox.devices} devices · ${cbox.points} Brick points`, cls: "" })} />
+          <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 6 }}>Builds a Brick/REC digital twin from the downloaded CCU/Hue config — rooms → devices → points, each linked to the live observation stream.</div>
         </div>
 
         <NetworkMap />

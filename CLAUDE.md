@@ -90,6 +90,11 @@ cache under `devices` and gets written to `/etc/hosts` by `dhcedge update-hosts`
   bridge whitelist** (API keys). **Never commit.** Runtime-only under `/opt/dhe`;
   `.gitignore` blocks `**/discovered/`, `deploy/cbox/discovered/`,
   `*.discovered.json` as a backstop.
+- `/opt/dhe/cbox/cbox.jsonld` — the **generated digital twin (C-BOX)** built from the
+  discovered config by `POST /app-api/cbox-generate` (rooms → devices → Brick points).
+  Carries the same room/person-name PII; written 0600, versioned to `cbox.history/`,
+  runtime-only. **Never commit** (`.gitignore` blocks `deploy/cbox/cbox.jsonld`,
+  `cbox.history/`, `*.cbox.jsonld`).
 - Node-RED credentials are encrypted in `flows_cred.json` under the userDir
   (never committed; encryption key is in `credential-secret` above).
 - Never put device IPs, API keys, tokens, or passwords in committed files.
