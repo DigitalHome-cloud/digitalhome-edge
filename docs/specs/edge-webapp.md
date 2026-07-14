@@ -72,13 +72,25 @@ build output. Serving is identical either way — that's the point.
 
 | Method | Endpoint | Returns / does |
 |---|---|---|
-| GET | `/app-api/status` | `{solar, ccu, hue}` link state + latest readings + pipeline counts (from `global.*`) |
-| POST | `/app-api/scan` | `{source}` → trigger the existing scan flow, return candidates |
-| POST | `/app-api/connect` | `{source, ip, email?, password?, user?, pass?}` → drive the existing connect functions |
+| GET | `/app-api/status` | `{solar, ccu, hue}` link state + latest readings + pipeline counts + config summaries (from `global.*`) |
+| GET | `/app-api/ws` | WebSocket — pushes the status payload every 3 s (React `useEdgeStream` hook) |
+| POST | `/app-api/scan` | `{source}` → subnet HTTP probe, return CCU/Hue candidates |
+| POST | `/app-api/connect` | `{source, ip, token?/user?/pass?/email?/password?}` → CCU (token/session), Hue (30 s pairing loop), Solar |
+| POST | `/app-api/lan-scan` | crawl the `/24` → devices with `{ip, mac, vendor, hostname, ports, role}` (ARP + OUI + reverse-DNS) |
+| POST | `/app-api/config-pull` | `{source:"ccu"\|"hue"}` → one-shot download of the home structure (rooms/devices/scenes) |
 
-Implemented: `GET /app-api/status`, `GET /app-api/ws` (WebSocket push), `POST /app-api/scan`,
-`POST /app-api/connect` (CCU token/session, Hue 30s pairing loop, Solar). The Gatsby app does
-onboarding natively via these — the iframe hybrid is retired (Dashboard 2.0 doesn't embed cleanly).
+All `/app-api/*` are LAN-open (exempt from the basic-auth middleware). The iframe hybrid is
+retired (Dashboard 2.0 doesn't embed cleanly) — the Gatsby app is fully native.
+
+### Discovered home config — never commit
+
+`POST /app-api/config-pull` writes the full home structure to **`/opt/dhe/cbox/discovered/{ccu,hue}.json`**
+(0600): CCU `roomlist`+`functionlist`+`devicelist` and the Hue `GET /api/<key>`, including the raw
+responses. This is **brownfield-discovery input for the C-BOX** (rooms → `rec:Room`, devices →
+Brick equipment), but it contains **PII** (room/person names, device serials) and the **Hue bridge
+whitelist** (API keys). It is **runtime-only under `/opt/dhe`** and **must never reach git** —
+`.gitignore` blocks `**/discovered/`, `deploy/cbox/discovered/`, `*.discovered.json`; see
+`CLAUDE.md` → Sensitive data.
 
 ## Migration
 

@@ -77,10 +77,19 @@ cache under `devices` and gets written to `/etc/hosts` by `dhcedge update-hosts`
 
 - `/opt/dhe/secrets/` — one file per secret (0600 each): `mcp-auth-token`,
   `nodered-admin-password`, `nodered-http-password`, `nodered-credential-secret`,
-  `device-token`, `edge-id`, `home-id`, `machine-id`. Gitignored root; nothing
-  from this dir belongs in commits.
+  `device-token`, `edge-id`, `home-id`, `machine-id`, plus integration link
+  secrets `solarman-app-secret`, `solarman-token.json`, `ccu.json` (CCU IP +
+  API token), `hue.json` (Hue IP + API key). Gitignored root; nothing from this
+  dir belongs in commits.
 - `/opt/dhe/config/dhe.config.cache` — non-secret settings + hue api key.
   0600. Gitignored.
+- `/opt/dhe/cbox/discovered/{ccu,hue}.json` — **home structure downloaded from
+  the devices** (rooms, functions, devices, scenes, plus the raw CCU XML / Hue
+  bridge config). Written 0600 at runtime by the `POST /app-api/config-pull`
+  flow. Contains **PII** (room/person names, device serials) and the **Hue
+  bridge whitelist** (API keys). **Never commit.** Runtime-only under `/opt/dhe`;
+  `.gitignore` blocks `**/discovered/`, `deploy/cbox/discovered/`,
+  `*.discovered.json` as a backstop.
 - Node-RED credentials are encrypted in `flows_cred.json` under the userDir
   (never committed; encryption key is in `credential-secret` above).
 - Never put device IPs, API keys, tokens, or passwords in committed files.
