@@ -10,6 +10,8 @@ lib/labels.js     the home's words in EN/DE/FR, keyed on the name from the CCU o
 lib/dynsec.js     the broker's rules for a code (Mosquitto Dynamic Security)
 lib/engine.js     broker link, scopes and state out, taps and rings in, checks
 nodes/dhc-panel   the Node-RED node and /api/panel/* (behind the edge's basic auth)
+
+../../devices/door-adapter   the other end of a "door" code: an outdoor station on a Raspberry Pi
 ```
 
 The node never talks to a device. Output 1 carries one checked command per tap; the flow sends it to the device.

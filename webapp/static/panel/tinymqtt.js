@@ -5,9 +5,10 @@
 // when the link drops. Plain ES2017, no libraries, so an old phone runs it.
 //
 //   var link = tinymqtt({ url, username, password, will: { topic, payload, retain },
-//                         onUp: function () {}, onDown: function (why) {}, onMessage: function (topic, text, retained) {} });
+//                         onUp: function () {}, onDown: function (why) {}, onMessage: function (topic, text, retained, bytes) {} });
 //   link.subscribe("a/#"); link.publish("a/b", "text", true); link.close();
 //
+// A topic ending in /frame is a picture: `text` is null and `bytes` (a Uint8Array) carries it.
 // onDown gets "refused" when the broker turned the name and password down:
 // the link then stays down (a revoked code must not keep knocking).
 'use strict';
@@ -48,7 +49,8 @@ function tinymqtt(o) {
     } else if (type === 3) {                           // PUBLISH (QoS 0: no packet id)
       var tl = (body[0] << 8) | body[1], topic = dec.decode(body.subarray(2, 2 + tl));
       var at = 2 + tl + ((flags & 6) ? 2 : 0);
-      if (o.onMessage) o.onMessage(topic, dec.decode(body.subarray(at)), !!(flags & 1));
+      var bytes = body.subarray(at), picture = /\/frame$/.test(topic);
+      if (o.onMessage) o.onMessage(topic, picture ? null : dec.decode(bytes), !!(flags & 1), bytes);
     }
   }
 

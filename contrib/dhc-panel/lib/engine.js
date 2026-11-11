@@ -13,6 +13,9 @@
 //   status  phone -> edge, retained   { state: "online" | "offline" } (offline is the last will)
 //   ring    phone -> edge             {}            only a code with bell "ring"
 //   answer  phone -> edge             { answer }    only a code with bell "listen"
+//   frame   door -> edge -> listeners  a JPEG, binary, not retained: only a "door" code sends one, and only
+//                                     while a ring of its own is being watched; never stored
+// A door code also gets event { t: "watch", ringId, seconds }: send pictures for that long (0: stop).
 
 "use strict";
 
@@ -29,6 +32,10 @@ const ACTS_PER_10S = 30;
 const RING_EVERY_MS = 5000;
 const ANSWER_WITHIN_MS = 120000;
 const DYNSEC_TIMEOUT_MS = 5000;
+const WATCH_MS = 120000;              // pictures from the door after a ring
+const WATCH_AFTER_ANSWER_MS = 20000;  // and this long after someone answered
+const FRAME_MAX = 150000;             // bytes, one JPEG
+const FRAMES_PER_S = 5;
 
 class Engine extends EventEmitter {
     /**
@@ -56,6 +63,8 @@ class Engine extends EventEmitter {
         this.sent = new Map();        // topic -> last retained payload, to publish changes only
         this.acts = new Map();        // code id -> [timestamps]
         this.lastRing = null;         // { ringId, from, ts }
+        this.watching = new Map();    // door code id -> { ringId, until }
+        this.frameTimes = new Map();  // door code id -> [timestamps] in the last second
         this.client = null;
         this.connected = false;
         this.queue = Promise.resolve();
@@ -92,7 +101,7 @@ class Engine extends EventEmitter {
 
     onConnect() {
         this.sent.clear();
-        const topics = [dynsec.RESPONSE].concat(["act", "ring", "answer", "status"].map((t) => dynsec.BASE + "/+/" + t));
+        const topics = [dynsec.RESPONSE].concat(["act", "ring", "answer", "status", "frame"].map((t) => dynsec.BASE + "/+/" + t));
         this.client.subscribe(topics, (err) => {
             if (err) return this.log("error", "broker: cannot subscribe: " + err.message);
             this.syncRules().then((ready) => {
@@ -203,10 +212,12 @@ class Engine extends EventEmitter {
 
     onMessage(topic, payload) {
         if (topic === dynsec.RESPONSE) return this.onControlResponse(payload);
-        const m = /^dhc\/panel\/([a-z0-9]+)\/(act|ring|answer|status)$/.exec(topic);
+        const m = /^dhc\/panel\/([a-z0-9]+)\/(act|ring|answer|status|frame)$/.exec(topic);
         if (!m) return;
         const code = this.registry.get(m[1]);
-        if (!code || payload.length > MAX_PAYLOAD) return;
+        if (!code) return;
+        if (m[2] === "frame") return this.onFrame(code, payload);   // binary: no JSON, its own size limit
+        if (payload.length > MAX_PAYLOAD) return;
         let body = {};
         if (payload.length) { try { body = JSON.parse(payload.toString("utf8")); } catch (_) { return; } }
         if (!body || typeof body !== "object") return;
@@ -266,7 +277,27 @@ class Engine extends EventEmitter {
         const hearing = listeners.filter((l) => this.online.get(l.id)).length;
         this.event(code.id, { t: "rung", ringId, listeners: hearing });
         const targets = this.setOffBell(code.name);
+        if (code.kind === "door") this.watch(code.id, ringId, WATCH_MS);
         this.emit("ring", { ringId, code: code.id, name: code.name, listeners: hearing, targets });
+    }
+
+    /** Ask a door station for pictures for `ms` (0: stop). Frames outside this window are dropped. */
+    watch(id, ringId, ms) {
+        this.watching.set(id, { ringId, until: Date.now() + ms });
+        this.event(id, { t: "watch", ringId, seconds: Math.round(ms / 1000) });
+    }
+
+    /** A picture from a door station: relayed to the listening phones that are online, never kept. */
+    onFrame(code, payload) {
+        const w = this.watching.get(code.id);
+        const now = Date.now();
+        if (code.kind !== "door" || !w || now > w.until || !payload.length || payload.length > FRAME_MAX) return;
+        const recent = (this.frameTimes.get(code.id) || []).filter((t) => now - t < 1000);
+        if (recent.length >= FRAMES_PER_S) return;
+        recent.push(now); this.frameTimes.set(code.id, recent);
+        for (const l of this.registry.codes) {
+            if (l.bell === "listen" && this.online.get(l.id)) this.client.publish(dynsec.topicOf(l.id, "frame"), payload, { qos: 0, retain: false });
+        }
     }
 
     /** The house's own bell: the chosen Hue lights blink, the chosen chimes sound. Returns how many. */
@@ -295,6 +326,8 @@ class Engine extends EventEmitter {
         const ring = this.lastRing;
         if (!ring || Date.now() - ring.ts > ANSWER_WITHIN_MS) return;
         this.event(ring.from, { t: "answer", ringId: ring.ringId, answer: body.answer, by: code.name });
+        const w = this.watching.get(ring.from);
+        if (w && w.ringId === ring.ringId && w.until > Date.now() + WATCH_AFTER_ANSWER_MS) this.watch(ring.from, ring.ringId, WATCH_AFTER_ANSWER_MS);
         for (const l of this.registry.codes) if (l.bell === "listen") this.event(l.id, { t: "answered", ringId: ring.ringId, answer: body.answer, by: code.name });
         this.emit("answer", { ringId: ring.ringId, answer: body.answer, code: code.id, name: code.name });
     }
@@ -366,6 +399,7 @@ class Engine extends EventEmitter {
         await this.control(dynsec.deleteCommands(id), true);
         this.registry.remove(id);
         this.online.delete(id);
+        this.watching.delete(id);
         for (const leaf of ["scope", "state", "status"]) { this.sent.delete(dynsec.topicOf(id, leaf)); this.retained(dynsec.topicOf(id, leaf), null); }
         this.log("info", "code revoked: " + id);
         return true;

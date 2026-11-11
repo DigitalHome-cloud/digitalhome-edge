@@ -1,0 +1,17 @@
+{
+  "name": "dhc-door-adapter",
+  "version": "0.1.0",
+  "description": "An analog outdoor door station as an MQTT device of digitalhome.edge: ring, pictures during a ring, spoken answers.",
+  "license": "MIT",
+  "private": true,
+  "main": "index.js",
+  "bin": { "dhc-door": "index.js" },
+  "scripts": {
+    "start": "node index.js",
+    "fake": "node index.js --fake"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "mqtt": "^5.10.0"
+  }
+}

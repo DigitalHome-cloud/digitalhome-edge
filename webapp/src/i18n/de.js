@@ -150,4 +150,17 @@ export default {
   "device": "Gerät",
   "chime": "Gong",
   "{n} of {all} shown. Double-click an empty field to keep the name as it is.": "{n} von {all} gezeigt. Doppelklick auf ein leeres Feld übernimmt den Namen, wie er ist.",
+
+  // door station
+  "door station adapter": "Adapter der Türstation",
+  "this is the door station adapter (Raspberry Pi)": "das ist der Adapter der Türstation (Raspberry Pi)",
+  "Door station adapter: {name}": "Adapter der Türstation: {name}",
+  "On the Raspberry Pi at the door station's cable, run sudo bash install.sh from devices/door-adapter and paste this link when it asks. It is shown only now; it is the adapter's password. Do not print it.": "Auf dem Raspberry Pi am Kabel der Türstation sudo bash install.sh aus devices/door-adapter ausführen und diesen Link einfügen, wenn danach gefragt wird. Er wird nur jetzt gezeigt; er ist das Passwort des Adapters. Nicht ausdrucken.",
+  "Link for the adapter": "Link für den Adapter",
+  "Copied": "Kopiert",
+  "Copy": "Kopieren",
+  "At the door": "An der Tür",
+  "Nothing rings yet: make a code for the door station adapter, or one for a phone that is the door bell (Codes).": "Noch klingelt nichts: einen Code für den Adapter der Türstation erstellen, oder einen für ein Handy, das die Türklingel ist (Codes).",
+  "ready": "bereit",
+  "not connected": "nicht verbunden",
 };

@@ -296,8 +296,13 @@ home network; a phone at the door is the door bell. Spec:
 
 - [x] Panel phase 1: broker, codes, tiles, family page, admin; ring and answer between phones.
 - [x] Panel phase 2: the house's own bell (Hue lights blink, Homematic chime), with settings and a test.
-- [ ] Panel: first bring-up on a box (stage), with a real phone, real lights and the real chime.
-- [ ] Panel phase 3: the door phone and stations with a face and a voice over MQTT.
+- [x] Panel: first bring-up on the stage box with a real phone (port 9001 opened in ufw).
+- [x] Panel: labels in EN/DE/FR (key: the name in the CCU or Hue), the code's language on its card; the edge portal.
+- [x] Door station, software: a `door` code, pictures relayed during a ring, answers spoken at the station; the adapter `devices/door-adapter/` (tested in `--fake` mode).
+- [ ] Door station, hardware: measure the TMEZON station's 4 wires, choose the grabber, build the interface board, install the Pi.
+- [ ] Panel: real lights and the real chime set off by a ring.
+- [ ] Door opener: deliberately not wired (decision of 2026-11-11).
+- [ ] Talking to the visitor from a phone: needs HTTPS on the edge (the browser gives a page the microphone only there) and an audio hybrid on the station's audio wire.
 - [ ] The `/api/lights`, `/api/scene`, `/api/heating` flows are still stubs; the Panel tab's `write device` is the first real write path.
 
 - [x] Hue API key — registered and stored under `/opt/dhe/secrets/hue-api-key`

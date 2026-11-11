@@ -42,6 +42,8 @@ contrib/
   dhc-mcp/       MCP palette — config node + tool-in/resource-in/response
   dhc-sync/      OAuth device flow + dashboard pairing UI + telemetry loop
   dhc-panel/     Scan and control — codes, scopes, checks (phones over MQTT)
+devices/
+  door-adapter/  an analog outdoor door station as an MQTT device (runs on a Raspberry Pi)
 deploy/
   docker-compose.yml   node-red + mosquitto
   mosquitto/           broker config (no anonymous access, per-code rules)

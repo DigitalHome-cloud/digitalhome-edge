@@ -19,6 +19,7 @@ function writableLeaves(code) {
     if (code.bell === "ring") leaves.push("ring");
     if (code.bell === "listen") leaves.push("answer");
     if (code.kind === "phone") leaves.push("up/#");   // a stationary phone's touches and answers
+    if (code.kind === "door") leaves.push("frame");   // the door camera's pictures, relayed during a ring
     return leaves;
 }
 

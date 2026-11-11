@@ -10,15 +10,15 @@
 var TEXTS = {
   en: { up: 'connected', down: 'no link', nocode: 'This address has no code. Scan the QR code again.', refused: 'This code is no longer valid. Ask for a new one.',
     empty: 'Nothing to switch here.', on: 'on', off: 'off', away: 'not reachable', open: 'open', closed: 'closed', ring: 'Ring', rung: 'I have rung.', nobody: 'I have rung. Please wait.',
-    rings: 'is ringing', coming: 'I am coming', wait: 'One moment', leave: 'Leave it at the door', close: 'Close',
+    rings: 'is ringing', door: 'At the door', coming: 'I am coming', wait: 'One moment', leave: 'Leave it at the door', close: 'Close',
     a_coming: 'Someone is coming.', a_wait: 'One moment, please.', a_leave: 'Please leave it at the door.', answered: 'answered', listen: 'This phone rings with the door bell while this page is open.', sound: 'Tap once so the bell can sound' },
   de: { up: 'verbunden', down: 'keine Verbindung', nocode: 'Diese Adresse hat keinen Code. Bitte den QR-Code noch einmal scannen.', refused: 'Dieser Code gilt nicht mehr. Bitte einen neuen geben lassen.',
     empty: 'Hier gibt es nichts zu schalten.', on: 'an', off: 'aus', away: 'nicht erreichbar', open: 'offen', closed: 'zu', ring: 'Klingeln', rung: 'Ich habe geklingelt.', nobody: 'Ich habe geklingelt. Bitte warten.',
-    rings: 'klingelt', coming: 'Ich komme', wait: 'Einen Moment', leave: 'Bitte abstellen', close: 'Schließen',
+    rings: 'klingelt', door: 'An der Tür', coming: 'Ich komme', wait: 'Einen Moment', leave: 'Bitte abstellen', close: 'Schließen',
     a_coming: 'Es kommt jemand.', a_wait: 'Einen Moment, bitte.', a_leave: 'Bitte vor der Tür abstellen.', answered: 'hat geantwortet', listen: 'Dieses Handy klingelt mit, solange diese Seite offen ist.', sound: 'Einmal tippen, damit die Klingel zu hören ist' },
   fr: { up: 'connecté', down: 'pas de lien', nocode: 'Cette adresse n\'a pas de code. Scannez de nouveau le code QR.', refused: 'Ce code n\'est plus valable. Demandez-en un nouveau.',
     empty: 'Rien à commander ici.', on: 'allumé', off: 'éteint', away: 'injoignable', open: 'ouvert', closed: 'fermé', ring: 'Sonner', rung: 'J\'ai sonné.', nobody: 'J\'ai sonné. Merci de patienter.',
-    rings: 'sonne', coming: 'J\'arrive', wait: 'Un instant', leave: 'Déposez-le devant la porte', close: 'Fermer',
+    rings: 'sonne', door: 'À la porte', coming: 'J\'arrive', wait: 'Un instant', leave: 'Déposez-le devant la porte', close: 'Fermer',
     a_coming: 'Quelqu\'un arrive.', a_wait: 'Un instant, s\'il vous plaît.', a_leave: 'Merci de le déposer devant la porte.', answered: 'a répondu', listen: 'Ce téléphone sonne avec la sonnette tant que cette page est ouverte.', sound: 'Touchez une fois pour entendre la sonnette' }
 };
 var ICONS = { light: '💡', switch: '🔌', blind: '🪟', heating: '🌡️' };
@@ -131,17 +131,32 @@ function card(icon, text, buttons, ringing, ms) {
   $('card-icon').textContent = icon; $('card-text').textContent = text;
   var box = $('card-buttons'); box.textContent = '';
   buttons.forEach(function (b) { var n = el('button', b.quiet ? 'quiet' : '', b.label); n.type = 'button'; n.onclick = b.fn; box.appendChild(n); });
-  $('card').className = 'card' + (ringing ? ' ringing' : ''); $('card').hidden = false;
+  $('card').className = 'card' + (ringing ? ' ringing' : '') + ($('card-picture').hidden ? '' : ' with-picture'); $('card').hidden = false;
   if (ringing) { dingDong(); ringTimer = setInterval(dingDong, 4000); }
   cardTimer = setTimeout(closeCard, ms || 60000);
 }
-function closeCard() { clearTimeout(cardTimer); clearInterval(ringTimer); $('card').hidden = true; }
+function closeCard() { clearTimeout(cardTimer); clearInterval(ringTimer); $('card').hidden = true; ringOpen = false; picture(null); }
+
+// A picture from the door camera, while a ring's card is open. The previous one is released at once,
+// so an old phone does not fill up; nothing is kept when the card closes.
+var pictureUrl = '';
+function picture(bytes) {
+  var img = $('card-picture');
+  if (pictureUrl) { URL.revokeObjectURL(pictureUrl); pictureUrl = ''; }
+  if (!bytes) { img.hidden = true; img.removeAttribute('src'); $('card').classList.remove('with-picture'); return; }
+  if ($('card').hidden || !ringOpen) return;
+  pictureUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+  img.src = pictureUrl; img.alt = t('door'); img.hidden = false; $('card').classList.add('with-picture');
+}
+var ringOpen = false;   // the card shows a ring (or its answer): pictures belong on it
 
 function onEvent(e) {
   var close = { label: t('close'), quiet: true, fn: closeCard };
   if (e.t === 'ring') {
     var answer = function (a) { return { label: t(a), fn: function () { link.publish(BASE + 'answer', JSON.stringify({ answer: a })); closeCard(); } }; };
+    picture(null);
     card('🔔', e.from + ' ' + t('rings'), [answer('coming'), answer('wait'), answer('leave'), close], true, 60000);
+    ringOpen = true;
   } else if (e.t === 'answered') {
     if (!$('card').hidden) card('✅', e.by + ' ' + t('answered') + ': ' + t(e.answer), [close], false, 4000);
   } else if (e.t === 'rung') {
@@ -166,7 +181,8 @@ function start() {
     will: { topic: BASE + 'status', payload: '{"state":"offline"}', retain: true },
     onUp: function () { showLink(true); link.publish(BASE + 'status', '{"state":"online"}', true); },
     onDown: function (why) { showLink(false); if (why === 'refused') { scope = null; $('main').textContent = ''; closeCard(); note(t('refused')); } },
-    onMessage: function (topic, text) {
+    onMessage: function (topic, text, retained, bytes) {
+      if (text === null) { if (topic === BASE + 'frame') picture(bytes); return; }
       var body; try { body = text ? JSON.parse(text) : null; } catch (e) { return; }
       var leaf = topic.slice(BASE.length);
       if (leaf === 'scope' && body) { scope = body; if (TEXTS[body.lang]) { lang = body.lang; document.documentElement.lang = lang; showLink(true); } paint(); }

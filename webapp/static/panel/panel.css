@@ -32,6 +32,10 @@ h2 { font-size: 15px; font-weight: 600; color: var(--dim); margin: 18px 4px 8px;
 .card-in { width: 100%; max-width: 440px; text-align: center; }
 .card-icon { font-size: 84px; }
 .card.ringing .card-icon { animation: shake .5s ease-in-out infinite alternate; }
+/* the door camera during a ring: a few pictures a second, never stored */
+.card-picture { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #000; border-radius: 16px; margin: 0 0 12px; }
+.card-picture[hidden] { display: none; }
+.card.with-picture .card-icon { font-size: 40px; }
 @keyframes shake { from { transform: rotate(-14deg); } to { transform: rotate(14deg); } }
 @media (prefers-reduced-motion: reduce) { .card.ringing .card-icon { animation: none; } }
 .card-text { font-size: 28px; font-weight: 700; margin: 12px 0 24px; overflow-wrap: anywhere; }

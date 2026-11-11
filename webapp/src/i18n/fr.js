@@ -150,4 +150,17 @@ export default {
   "device": "appareil",
   "chime": "carillon",
   "{n} of {all} shown. Double-click an empty field to keep the name as it is.": "{n} sur {all} affichés. Un double-clic sur un champ vide reprend le nom tel quel.",
+
+  // door station
+  "door station adapter": "adaptateur de la platine de rue",
+  "this is the door station adapter (Raspberry Pi)": "c’est l’adaptateur de la platine de rue (Raspberry Pi)",
+  "Door station adapter: {name}": "Adaptateur de la platine de rue : {name}",
+  "On the Raspberry Pi at the door station's cable, run sudo bash install.sh from devices/door-adapter and paste this link when it asks. It is shown only now; it is the adapter's password. Do not print it.": "Sur le Raspberry Pi au câble de la platine de rue, lancez sudo bash install.sh depuis devices/door-adapter et collez ce lien quand il le demande. Il n’est affiché que maintenant ; c’est le mot de passe de l’adaptateur. Ne l’imprimez pas.",
+  "Link for the adapter": "Lien pour l’adaptateur",
+  "Copied": "Copié",
+  "Copy": "Copier",
+  "At the door": "À la porte",
+  "Nothing rings yet: make a code for the door station adapter, or one for a phone that is the door bell (Codes).": "Rien ne sonne encore : créez un code pour l’adaptateur de la platine de rue, ou pour un téléphone qui fait la sonnette (Codes).",
+  "ready": "prêt",
+  "not connected": "non connecté",
 };

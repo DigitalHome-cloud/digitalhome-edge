@@ -28,10 +28,11 @@ function phone(id, secret) {
         will: { topic: "dhc/panel/" + id + "/status", payload: '{"state":"offline"}', retain: true },
         onUp: () => { p.up = true; p.link.publish("dhc/panel/" + id + "/status", '{"state":"online"}', true); },
         onDown: (why) => { p.up = false; p.down = why; },
-        onMessage: (topic, text) => got.push({ topic, body: text ? JSON.parse(text) : null }),
+        onMessage: (topic, text, retained, bytes) => got.push(text === null ? { topic, bytes: Uint8Array.from(bytes) } : { topic, body: text ? JSON.parse(text) : null }),
     });
     p.last = (leaf) => { const m = got.filter((g) => g.topic.endsWith("/" + leaf)); return m.length ? m[m.length - 1].body : undefined; };
     p.events = () => got.filter((g) => g.topic.endsWith("/event")).map((g) => g.body);
+    p.frames = () => got.filter((g) => g.topic.endsWith("/frame")).map((g) => g.bytes);
     p.send = (leaf, body) => p.link.publish("dhc/panel/" + id + "/" + leaf, JSON.stringify(body || {}));
     return p;
 }
@@ -127,6 +128,54 @@ describe.skipIf(!BIN)("the panel on a real broker", () => {
         await sleep(200);
         expect(door.events().filter((e) => e.t === "answer")).toHaveLength(1);
     });
+
+    it("relays the door station's pictures to the listening phones during a ring, and only then", async () => {
+        const room = phones.find((p) => p.last("scope") && p.last("scope").name === "My room");
+        // the adapter: the same mqtt client the Pi runs, with a door code
+        const { code, secret } = await engine.createCode({ name: "Station", kind: "door", bell: "none", scope: { floors: [1] } });
+        expect(code.bell).toBe("ring");
+        expect(code.scope.none).toBe(true);
+        const events = [];
+        const adapter = mqtt.connect("mqtt://127.0.0.1:" + TCP, { username: code.id, password: secret, clientId: "door-test", reconnectPeriod: 0 });
+        adapter.on("message", (t, m) => { if (t.endsWith("/event")) events.push(JSON.parse(m.toString())); });
+        await new Promise((r) => adapter.on("connect", r));
+        await new Promise((r) => adapter.subscribe("dhc/panel/" + code.id + "/#", r));
+        const jpeg = (n) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, n]), Buffer.alloc(1000, n), Buffer.from([0xff, 0xd9])]);
+        const frame = (b) => adapter.publish("dhc/panel/" + code.id + "/frame", b);
+
+        frame(jpeg(1));                                        // no ring yet: dropped
+        await sleep(300);
+        expect(room.frames()).toHaveLength(0);
+
+        await sleep(5100);                                    // past the last ring's 5 s limit
+        adapter.publish("dhc/panel/" + code.id + "/ring", "{}");
+        expect(await until(() => events.some((e) => e.t === "watch" && e.seconds === 120))).toBe(true);
+        expect(await until(() => room.events().some((e) => e.t === "ring" && e.from === "Station"))).toBe(true);
+        frame(jpeg(2));
+        expect(await until(() => room.frames().length === 1)).toBe(true);
+        expect(Buffer.from(room.frames()[0]).equals(jpeg(2))).toBe(true);   // byte for byte, through the page's client
+        frame(Buffer.alloc(150001, 7));                       // too big: dropped
+        for (let i = 0; i < 8; i++) frame(jpeg(10 + i));      // 5 a second at most, the first one included: 4 more pass
+        await sleep(500);
+        expect(room.frames().length).toBe(5);
+
+        // a listening phone may not send pictures: the broker refuses, nothing arrives anywhere
+        room.link.publish("dhc/panel/" + room.id + "/frame", "x");
+        await sleep(300);
+        expect(room.frames().length).toBe(5);
+
+        // an answer reaches the station and ends the window 20 s later
+        room.send("answer", { answer: "wait" });
+        expect(await until(() => events.some((e) => e.t === "answer" && e.answer === "wait"))).toBe(true);
+        expect(await until(() => events.some((e) => e.t === "watch" && e.seconds === 20))).toBe(true);
+        engine.watching.get(code.id).until = Date.now() - 1;  // the window is over
+        frame(jpeg(3));
+        await sleep(300);
+        expect(room.frames().length).toBe(5);
+        adapter.end(true);
+        expect(await engine.revokeCode(code.id)).toBe(true);
+        expect(engine.watching.has(code.id)).toBe(false);
+    }, 20000);
 
     it("knows which phones are there", async () => {
         const p = phones[1];

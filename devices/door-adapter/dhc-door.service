@@ -1,0 +1,25 @@
+# The door station adapter (devices/door-adapter). Installed by install.sh.
+[Unit]
+Description=dhc-door: outdoor door station as an MQTT device of digitalhome.edge
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dhc-door
+Group=dhc-door
+# video, audio and gpio: the grabber, the sound card and the call input
+SupplementaryGroups=video audio gpio
+ExecStart=/usr/bin/node /opt/dhc-door/index.js --config /etc/dhc-door/config.json
+Restart=always
+RestartSec=5
+# exit 3: the edge refused the code (revoked); do not knock again until someone fixes the config
+RestartPreventExitStatus=2 3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/etc/dhc-door
+
+[Install]
+WantedBy=multi-user.target

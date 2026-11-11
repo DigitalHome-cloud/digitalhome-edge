@@ -10,7 +10,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 
 const BELL = ["none", "listen", "ring"];
-const KIND = ["panel", "phone"];
+const KIND = ["panel", "phone", "door"];   // door: the adapter at an outdoor station (devices/door-adapter)
 const LANG = ["en", "de", "fr"];
 const MAX_CODES = 200;
 
@@ -81,7 +81,8 @@ class Registry {
             lang: LANG.includes(i.lang) ? i.lang : "en",
             created: new Date().toISOString(),
         };
-        // A code that rings is on a phone outside the door: it never gets house tiles.
+        // A door station adapter rings; a code that rings is outside the door: it never gets house tiles.
+        if (code.kind === "door") code.bell = "ring";
         if (code.bell === "ring") code.scope = { none: true, floors: [], rooms: [], kinds: [] };
         this.codes.push(code);
         this.save();

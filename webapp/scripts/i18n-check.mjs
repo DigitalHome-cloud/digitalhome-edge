@@ -12,7 +12,7 @@ const unq = (s) => JSON.parse(s);
 const used = new Set();
 for (const file of files) {
   const src = fs.readFileSync(file, "utf8");
-  for (const m of src.matchAll(/\b(?:t\(|tIn\([\w.]+,\s*)("(?:[^"\\]|\\.)*")/g)) used.add(unq(m[1]));
+  for (const m of src.matchAll(/\b(?:t\(|tr\(|tIn\([\w.]+,\s*)("(?:[^"\\]|\\.)*")/g)) used.add(unq(m[1]));
   // constant tables: SECTIONS, LEDE, KIND_LABEL, BELL_LABEL, the theme names
   for (const block of src.matchAll(/const (SECTIONS|LEDE|KIND_LABEL|BELL_LABEL) = ([\s\S]*?\n?\};|\[[\s\S]*?\n\];)/g)) {
     for (const m of block[2].matchAll(/"((?:[^"\\]|\\.)*)"/g)) {

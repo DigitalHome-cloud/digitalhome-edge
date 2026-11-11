@@ -37,7 +37,7 @@ A code is one client of the broker (Mosquitto Dynamic Security): its id is the u
 | `name` | what the card says, e.g. "Ground floor lights" |
 | `scope` | `{ floors: [n], rooms: [room id], kinds: ["light"\|"switch"\|"blind"\|"heating"], none }`. No floors and no rooms: the whole house. No kinds: every function. `none`: no tiles at all |
 | `bell` | `none`, `listen` (rings with the door bell, may answer), `ring` (is the door bell) |
-| `kind` | `panel` (a family phone); `phone` is reserved for the stationary face (phase 3) |
+| `kind` | `panel` (a family phone); `door` (the door station adapter, see Door station); `phone` is reserved for a stationary face |
 | `lang` | `en`, `de`, `fr`: the default language of the code: its printed card, its phone page, the home's words on it |
 
 - **The secret is not kept on the edge.** It exists in the QR code and, hashed, in the broker. The registry
@@ -104,6 +104,8 @@ All under `dhc/panel/<code id>/`. JSON payloads, at most 512 bytes from a phone.
 | `status` | phone → edge, retained | `{ state: "online" }`; `{ state: "offline" }` is the last will |
 | `ring` | phone → edge | `{}`. Only a `ring` code; one ring per 5 s |
 | `answer` | phone → edge | `{ answer: "coming"\|"wait"\|"leave" }`. Only a `listen` code, within 2 min of a ring |
+| `frame` | door → edge → listening phones | A JPEG, binary, not retained, at most 150 kB and 5 a second. Only from a `door` code inside its watch window; relayed to the `listen` codes that are online; never stored |
+| `event {t:"watch"}` | edge → door | `{ t: "watch", ringId, seconds }`: send pictures for that long (120 s after a ring, 20 s after an answer) |
 
 State: the node takes what the data pipeline's polls report (CCU statelist and Hue lights, every 30 s) and shows
 a tapped value at once; the next reading corrects it.
@@ -119,6 +121,29 @@ A ring from a `ring` code goes to every `listen` code as an event, and sets off 
   in the web app ("When the door bell rings", with a Test button) or over `/api/panel/bell`.
 - They reach the devices as ordinary commands on the node's output 1 (`kind: "bell"`, `set: "alert"` or `"on"`),
   so the same `write device` function sends them. Nothing ticked: only the phones ring.
+
+## Door station
+
+The house has an analog 4-wire video intercom whose indoor monitor is broken; the outdoor station (button,
+camera, speaker) still works. A **door station adapter** turns it into an MQTT device: a Raspberry Pi at the
+station's cable with an interface board, a USB video grabber and a USB sound card
+(`devices/door-adapter/`). The monitor is replaced by an old phone on the wall: an ordinary `listen` code.
+
+```
+station button ──▶ adapter: ring ──▶ engine ──▶ every listen code: ring card; Hue blink, chime (as above)
+                                        └──▶ adapter: event watch 120 s
+station camera ──▶ adapter: frame (JPEG, 3/s) ──▶ engine ──▶ listen codes online: the picture on the ring card
+phone answer ──▶ engine ──▶ adapter: event answer ──▶ voice clip on the station's speaker ("Quelqu'un arrive.")
+```
+
+- The adapter has its own code of `kind: "door"`: bell `ring`, no tiles, made in the portal; its link is shown
+  once to paste into the Pi's installer, never printed. The broker lets it publish `ring`, `status`, `frame`.
+- **Pictures only during a ring**: the engine asks for them (`watch`) and drops any frame outside the window,
+  over 150 kB or over 5 a second. They go to listening phones only, are never stored or logged, and stay on
+  the LAN. There is no "look at the door" without a ring.
+- The voice clips speak the phone page's own words in the door code's language (`make-clips.sh`).
+- **No door opener**: the lock is not wired, there is no tile for it (decision of 2026-11-11).
+- **No talking back** yet: a phone gives a page its microphone only on HTTPS.
 
 ## The node and its flow (tab "Panel")
 
