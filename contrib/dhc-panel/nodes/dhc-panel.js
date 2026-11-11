@@ -12,6 +12,7 @@
 "use strict";
 
 const fs = require("fs");
+const os = require("os");
 const mqtt = require("mqtt");
 const { Engine } = require("../lib/engine");
 
@@ -86,11 +87,24 @@ module.exports = function (RED) {
             next();
         });
     };
+    // The edge's own addresses on the home network, so a QR code made from
+    // http://localhost still points the phones at something they can reach.
+    // (Node-RED runs with the host's network; Docker's bridges are left out.)
+    const lanAddresses = () => {
+        const out = [];
+        for (const [name, list] of Object.entries(os.networkInterfaces())) {
+            if (/^(docker|br-|veth|virbr|lo)/.test(name)) continue;
+            for (const a of list || []) {
+                if (a.family === "IPv4" && !a.internal && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a.address)) out.push(a.address);
+            }
+        }
+        return out;
+    };
     const need = (res) => { if (engine) return true; res.status(503).json({ error: "the panel node is not running" }); return false; };
 
     RED.httpNode.get("/api/panel/codes", (req, res) => {
         if (!need(res)) return;
-        res.json(Object.assign({ ws_port: engine.wsPort }, engine.list()));
+        res.json(Object.assign({ ws_port: engine.wsPort, lan: lanAddresses() }, engine.list()));
     });
     RED.httpNode.post("/api/panel/codes", json, (req, res) => {
         if (!need(res)) return;

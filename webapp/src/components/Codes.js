@@ -41,6 +41,12 @@ export default function Codes() {
   const pickBell = (kind, id) => { const next = { ...bell.bell, [kind]: toggle(bell.bell[kind], id) }; setBell({ ...bell, bell: next }); call("PUT", "bell", next).then(setBell, (e) => setErr(e.message)); };
   const testBell = () => call("POST", "bell/test").then((j) => setBellMsg(j.targets ? `sent to ${j.targets}` : "nothing ticked"), (e) => setBellMsg(e.message));
   useEffect(() => { setBase(window.location.origin); }, []);
+  // Opened on the edge itself (localhost): the phones need its address on the home network instead.
+  useEffect(() => {
+    const lan = data && data.lan && data.lan[0];
+    if (!lan || !/\/\/(localhost|127\.|\[::1\])/.test(window.location.origin)) return;
+    setBase((b) => (/\/\/(localhost|127\.|\[::1\])/.test(b) ? `http://${lan}${window.location.port ? ":" + window.location.port : ""}` : b));
+  }, [data && data.lan && data.lan[0]]);
   useEffect(() => { if (!data) return undefined; const t = setInterval(load, 5000); return () => clearInterval(t); }, [!!data]);
 
   const make = async () => {
