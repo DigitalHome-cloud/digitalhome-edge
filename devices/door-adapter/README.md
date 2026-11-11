@@ -32,9 +32,14 @@ Also on the board: J21 "HOOK", J3 a serial port (3V3, TX, RX, GND), an I²C head
 The wall has **two cables**:
 - **4 wires** with the DOOR connector: **red = VCC, white = Audio, black = GND, yellow = Video**, the usual
   colours for the label's order. This is the outdoor station.
-- **2 wires** (white with a red stripe) with a small 2-pin plug that fits DC (J15): most likely the monitor's
-  power supply, run through the wall. If it measures 12–15 V DC it powers the station and, through a 5 V
-  step-down, the Pi.
+- **2 wires** (white with a red stripe) with a small 2-pin plug that fits DC (J15): the monitor's power, from
+  the kit's **DIN-rail supply in the electrical panel** (TMEZON "Modulo", type DR-60-12: 12 V, 60 W class,
+  100–240 V in). 60 W is far more than the station, the Pi (about 3 W) and a small amplifier need, so the
+  adapter runs from it: 12 V to the station's red wire, and a 12 → 5 V 3 A step-down for the Pi. Leave the
+  supply's output trimmer as it is.
+
+The station cable is the kit's 4-wire intercom cable, AWG24 (about 0.2 mm²), up to 15 m: about 1.3 Ω a wire,
+so a few tenths of a volt lost at the station's current. Unshielded: fine for CVBS video at this length.
 
 What this means for the board:
 - **The button has no wire of its own.** The call travels on the **white audio wire**, which also carries the
@@ -48,13 +53,13 @@ What this means for the board:
 
 With the cable above, five readings (multimeter, monitor unplugged):
 
-1. **The 2-wire cable**: DC volts and polarity. Expected 12–15 V; note which wire is +.
+1. **The 2-wire cable**: 12 V from the DIN supply; confirm the volts and note which wire is +.
 2. **Power the station**: that supply's + to **red**, − to **black**. Nothing on white and yellow yet.
 3. **The call, on white against black**: the DC volts at rest, while the button is held, after it is released
    (and whether it stays changed for a while). A clear step of a volt or more: an optocoupler or comparator
    will see it. If nothing changes in DC: the station sends a tone; then the USB sound card listens for it.
 4. **The current** in the red wire, at rest and with the button held (in the dark too, for the infrared
-   LEDs): it sizes the supply.
+   LEDs). Not needed for the supply (it has plenty); useful to know what the station draws.
 5. **The video, yellow against black**, on a TV's composite input or a cheap CVBS screen: a steady picture
    means CVBS (any USB composite grabber works); rolling or none means AHD 720P (an AHD-to-CVBS converter
    in front of the grabber, or an AHD-capable grabber).
@@ -66,7 +71,7 @@ Write the results into this file (a "Wiring" section), so the board below can be
 
 ## Parts
 
-Raspberry Pi 3 or Zero 2 W (Wi-Fi), 12 V 2 A supply, 12 V → 5 V step-down for the Pi, USB video grabber
+Raspberry Pi 3 or Zero 2 W (Wi-Fi), the existing 12 V DIN supply, a 12 V → 5 V 3 A step-down for the Pi, USB video grabber
 (per step 5), USB sound card, and a small board: an optocoupler (e.g. PC817) for the call to a GPIO
 (BCM 17 by default, active low), coupling and a small amplifier (e.g. LM386) for the speaker. Low voltage only.
 
