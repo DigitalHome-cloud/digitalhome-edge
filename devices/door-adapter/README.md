@@ -15,23 +15,52 @@ outdoor station ══ 4 wires ══ interface board ── Raspberry Pi (Wi-Fi
 
 No door opener: the lock wires stay unconnected. No talking back yet.
 
+## What the photos show (monitor MZ-IP-V142B, 2026-11-11)
+
+The monitor's label and board, and the cable that came out of the wall:
+
+| Monitor port | Pins (label order) | Board |
+|---|---|---|
+| DOOR1, DOOR2 | VCC, Audio, GND, Video | CN1, CN2 |
+| CAM1, CAM2 | VCC, Alarm, GND, Video | CN3, CN4 |
+| OUT (a second monitor) | Audio, GND, DATA, Video | CN6 |
+| DC | GND, DC | J15 |
+| NET | 4 pins | — |
+
+Also on the board: J21 "HOOK", J3 a serial port (3V3, TX, RX, GND), an I²C header (NC, GND, SCL, SDA).
+
+The wall has **two cables**:
+- **4 wires** with the DOOR connector: **red = VCC, white = Audio, black = GND, yellow = Video**, the usual
+  colours for the label's order. This is the outdoor station.
+- **2 wires** (white with a red stripe) with a small 2-pin plug that fits DC (J15): most likely the monitor's
+  power supply, run through the wall. If it measures 12–15 V DC it powers the station and, through a 5 V
+  step-down, the Pi.
+
+What this means for the board:
+- **The button has no wire of its own.** The call travels on the **white audio wire**, which also carries the
+  speaker and the microphone. So call detection and the voice share that wire: a comparator/optocoupler
+  watches its DC level, and the speaker signal goes in through a capacitor. The measurement below decides
+  both.
+- The **lock** is not in this cable: in these kits it is wired at the outdoor station. It stays as it is.
+- The station's power comes from the monitor's VCC pin: the adapter supplies it from the 12 V supply.
+
 ## 0. Measure first
 
-Nothing here guesses the station's signalling. Before buying or soldering, at the cable where the monitor hung:
+With the cable above, five readings (multimeter, monitor unplugged):
 
-1. **Photograph** the station's label and terminals, and the monitor's connector (colours and labels).
-2. **Identify the wires** with a multimeter (monitor unplugged): usually power (+12 V), ground, video, audio.
-   Then power the station from a 12 V supply on power and ground only, and measure each other wire against
-   ground: at rest, while the button is held, and while it is released.
-3. **The call**: does pressing the button close a separate contact, or change the level on the audio wire
-   (and by how much)? This decides the call-detect input.
-4. **Power**: does the station need power all the time, or did the monitor switch it on for a call? (The
-   adapter keeps it powered.)
-5. **Video**: connect the video wire and ground to a TV or a cheap CVBS monitor. A picture: CVBS, any USB
-   "composite" grabber works. Rolling or no picture: likely AHD 720P: use an AHD-to-CVBS converter in front of
-   the grabber, or an AHD-capable USB grabber. `v4l2-ctl --list-devices` on the Pi shows what it found.
-6. **Speaker**: the audio wire is usually shared by speaker and microphone. Feed a quiet tone through a
-   capacitor (e.g. 10 µF) and listen at the station before adding an amplifier.
+1. **The 2-wire cable**: DC volts and polarity. Expected 12–15 V; note which wire is +.
+2. **Power the station**: that supply's + to **red**, − to **black**. Nothing on white and yellow yet.
+3. **The call, on white against black**: the DC volts at rest, while the button is held, after it is released
+   (and whether it stays changed for a while). A clear step of a volt or more: an optocoupler or comparator
+   will see it. If nothing changes in DC: the station sends a tone; then the USB sound card listens for it.
+4. **The current** in the red wire, at rest and with the button held (in the dark too, for the infrared
+   LEDs): it sizes the supply.
+5. **The video, yellow against black**, on a TV's composite input or a cheap CVBS screen: a steady picture
+   means CVBS (any USB composite grabber works); rolling or none means AHD 720P (an AHD-to-CVBS converter
+   in front of the grabber, or an AHD-capable grabber).
+
+Then the speaker: a quiet tone through a 10 µF capacitor into white (− to black) should be heard at the
+station.
 
 Write the results into this file (a "Wiring" section), so the board below can be built to them.
 
