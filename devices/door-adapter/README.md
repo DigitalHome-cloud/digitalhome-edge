@@ -69,9 +69,35 @@ station.
 
 Write the results into this file (a "Wiring" section), so the board below can be built to them.
 
+## Video: a grabber that takes either standard
+
+The old monitor's picture was unsteady, but the monitor is the broken part, so that says nothing certain about
+the signal. Rather than find out, use a chain that accepts both: a small **"4-in-1" converter (AHD / TVI / CVI /
+CVBS → HDMI)**, which detects the standard by itself, then a **USB HDMI grabber** (UVC, e.g. one with an
+MS2109 chip), which the Pi sees as `/dev/video0` with no driver. Both run from 5 V or 12 V. If the TV test
+(reading 5) shows a steady picture, a plain USB composite grabber is enough and cheaper.
+
+## Camera power
+
+The camera can be switched off between rings: a logic-level MOSFET (or a small relay) in the station's red
+wire, driven from a GPIO, and two lines in `/etc/dhc-door/config.json`:
+
+```json
+{ "camera_on_cmd": "pinctrl set 27 op dh", "camera_off_cmd": "pinctrl set 27 op dl", "camera_warmup_ms": 1500 }
+```
+
+The adapter then switches it off at start, on when a ring is watched (pictures start after the warm-up), and
+off when the window ends.
+
+**But the station is one unit on four wires**: the button signals over the audio wire, and that may need the
+station powered. So test first, with the red wire disconnected: hold a 10 kΩ resistor from white to +12 V and
+measure white against black while pressing the button. If the level still changes, the button rings with the
+camera off, and switching is safe. If not, switching the camera off also silences the bell: leave the
+commands empty. The pictures already flow only during a ring either way.
+
 ## Parts
 
-Raspberry Pi 3 or Zero 2 W (Wi-Fi), the existing 12 V DIN supply, a 12 V → 5 V 3 A step-down for the Pi, USB video grabber
+Raspberry Pi 3 or Zero 2 W (Wi-Fi), the existing 12 V DIN supply, a 12 V → 5 V 3 A step-down for the Pi, the video converter and USB grabber (see Video), optionally a logic-level MOSFET for the camera power,
 (per step 5), USB sound card, and a small board: an optocoupler (e.g. PC817) for the call to a GPIO
 (BCM 17 by default, active low), coupling and a small amplifier (e.g. LM386) for the speaker. Low voltage only.
 

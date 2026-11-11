@@ -43,6 +43,12 @@ const DEFAULTS = {
     video_cmd: "ffmpeg -loglevel error -f v4l2 -i /dev/video0 -vf scale=640:-2,fps=3 -q:v 7 -f image2pipe -c:v mjpeg -",
     // {file} is replaced by the clip
     play_cmd: "aplay -q {file}",
+    // Optional: switch the station's camera power (e.g. a MOSFET on BCM 27: "pinctrl set 27 op dh" / "… dl").
+    // Empty: the camera stays powered. Only set them if the button still rings with the camera off
+    // (README → Camera power): otherwise switching it off silences the bell too.
+    camera_on_cmd: "",
+    camera_off_cmd: "",
+    camera_warmup_ms: 1500,
     clips: path.join(__dirname, "clips"),
 };
 const FAKE = {
@@ -123,15 +129,21 @@ function startButton() {
 
 // ── the camera ──────────────────────────────────────────────────────────────
 
-let video = null, stopAt = 0, stopTimer = null, sent = 0;
+let video = null, warming = null, stopAt = 0, stopTimer = null, sent = 0;
 function watch(seconds) {
     clearTimeout(stopTimer);
     if (seconds <= 0) return stopVideo("asked to stop");
     stopAt = Date.now() + seconds * 1000;
     stopTimer = setTimeout(() => stopVideo("window over"), seconds * 1000);
-    if (video) return log("watch: " + seconds + " s more");
+    if (video || warming) return log("watch: " + seconds + " s more");
     log("watch: pictures for " + seconds + " s");
     sent = 0;
+    if (!cfg.camera_on_cmd) return startVideo();
+    run(cfg.camera_on_cmd);
+    warming = setTimeout(() => { warming = null; if (Date.now() < stopAt) startVideo(); }, Number(cfg.camera_warmup_ms) || 0);
+}
+
+function startVideo() {
     video = run(cfg.video_cmd);
     let buf = Buffer.alloc(0);
     video.stdout.on("data", (d) => {
@@ -152,10 +164,13 @@ function watch(seconds) {
 const SOI = Buffer.from([0xff, 0xd8]), EOI = Buffer.from([0xff, 0xd9]);
 
 function stopVideo(why) {
-    if (!video) return;
-    log("pictures stopped (" + why + "), " + sent + " sent");
-    video.kill("SIGTERM");
-    video = null;
+    if (warming) { clearTimeout(warming); warming = null; }
+    if (video) {
+        log("pictures stopped (" + why + "), " + sent + " sent");
+        video.kill("SIGTERM");
+        video = null;
+    }
+    if (cfg.camera_off_cmd) run(cfg.camera_off_cmd);
 }
 
 // ── the voice ───────────────────────────────────────────────────────────────
@@ -189,4 +204,5 @@ process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 process.on("SIGUSR2", () => ring("signal"));
 
+if (cfg.camera_off_cmd) run(cfg.camera_off_cmd);   // at rest the camera is off
 startButton();
