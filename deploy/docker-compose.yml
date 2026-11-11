@@ -1,8 +1,9 @@
-# digitalhome.edge — Docker Compose stack (collapsed to one container).
+# digitalhome.edge — Docker Compose stack: Node-RED and an MQTT broker.
 #
-# The whole edge now runs in one Node-RED container: flows, MCP wire,
-# cloud sync, dashboard, sensor buffer. Both dhc-mcp and dhc-sync palettes
-# are baked into the image at build time from ../contrib/.
+# The edge's logic runs in one Node-RED container: flows, MCP wire, cloud
+# sync, dashboard, sensor buffer, panel. The dhc-mcp, dhc-sync and dhc-panel
+# palettes are baked into the image at build time from ../contrib/.
+# Beside it, Mosquitto carries the phones (end devices) on port 9001.
 #
 # Ports on this stack are 1881 (Node-RED editor + dashboard + /api/*)
 # and Node-RED serves MCP under the same port (/mcp/sse + /mcp/messages/*).
@@ -41,3 +42,28 @@ services:
       timeout: 5s
       retries: 3
       start_period: 45s
+
+  # MQTT broker for phones as end devices (scan and control, docs/specs/panel-scan-and-control.md).
+  # 1883 on loopback for Node-RED, 9001 (WebSocket) on the LAN for the panel page.
+  # No anonymous access: one client per QR code, made and revoked by Node-RED (contrib/dhc-panel).
+  mosquitto:
+    image: eclipse-mosquitto:2.0.20
+    container_name: dhe-mosquitto
+    restart: unless-stopped
+    network_mode: host
+    user: "1000:1000"                   # as Node-RED: owns /opt/dhe/mosquitto, may read the one secret below
+    volumes:
+      - /opt/dhe/mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - /opt/dhe/mosquitto/data:/mosquitto/data
+      - /opt/dhe/secrets/mqtt-nodered-password:/run/secrets/mqtt-nodered-password:ro
+    # First start: create the access file with Node-RED as its only admin.
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        f=/mosquitto/data/dynamic-security.json
+        if [ ! -s "$$f" ]; then
+          mosquitto_ctrl dynsec init "$$f" dhe-nodered "$$(cat /run/secrets/mqtt-nodered-password)"
+        fi
+        exec mosquitto -c /mosquitto/config/mosquitto.conf

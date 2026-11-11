@@ -40,7 +40,7 @@ log "Bootstrapping ${DHE_ROOT} (nodered=${NODERED_PORT}, mcp=${MCP_PORT}, homeId
 
 # ── 1. directory skeleton ────────────────────────────────────────────────────
 
-mkdir -p "${DHE_ROOT}"/{config,secrets,node-red-data,cbox,cbox/mappings,cbox.history,cache,timeseries,timeseries/cbox,timeseries/unmapped,timeseries/raw,timeseries/raw/solarman,webapp,db,logs}
+mkdir -p "${DHE_ROOT}"/{config,secrets,node-red-data,cbox,cbox/mappings,cbox.history,cache,timeseries,timeseries/cbox,timeseries/unmapped,timeseries/raw,timeseries/raw/solarman,webapp,db,logs,mosquitto,mosquitto/config,mosquitto/data}
 chmod 700 "${DHE_ROOT}/secrets"
 chmod 700 "${DHE_ROOT}/config"
 # node-red-data must be readable+writable by uid 1000 (the node-red user
@@ -59,6 +59,11 @@ EOF
 chmod 640 "${DHE_ROOT}/.env"
 
 install -m 644 "${SCRIPT_DIR}/dhe.service" /etc/systemd/system/dhe.service
+
+# MQTT broker config (phones as end devices). Always refreshed from the repo:
+# it holds no local settings. The access file (clients, roles) is the broker's
+# own, under mosquitto/data/, created on its first start.
+install -m 644 "${SCRIPT_DIR}/mosquitto/mosquitto.conf" "${DHE_ROOT}/mosquitto/config/mosquitto.conf"
 
 # Seed the starter A-Box vocabulary if the operator hasn't put one there.
 # The A-Box is the shared REC+Brick vocabulary the data-pipeline filter maps
@@ -145,6 +150,10 @@ gen_secret nodered-credential-secret 32
 gen_secret nodered-admin-password 24
 gen_secret nodered-http-password 24
 gen_secret mcp-auth-token 32
+# Node-RED's password on the MQTT broker (its only admin). The broker takes it
+# over on its first start; to change it later, also delete
+# /opt/dhe/mosquitto/data/dynamic-security.json (every QR code is then void).
+gen_secret mqtt-nodered-password 24
 writable_literal nodered-admin-user admin
 writable_literal nodered-http-user dhcedge
 writable_literal nodered-port "${NODERED_PORT}"
@@ -224,7 +233,8 @@ find "${DHE_ROOT}/secrets" -type f -exec chmod 600 {} \;
 find "${DHE_ROOT}/config"  -type f -exec chmod 600 {} \;
 # node-red-data must also be writable by the container (settings.js gets
 # rewritten by the entrypoint on first start).
-chown -R 1000:1000 "${DHE_ROOT}/node-red-data" "${DHE_ROOT}/cbox" "${DHE_ROOT}/cbox.history" "${DHE_ROOT}/cache" "${DHE_ROOT}/timeseries" "${DHE_ROOT}/webapp" "${DHE_ROOT}/db" "${DHE_ROOT}/logs"
+chown -R 1000:1000 "${DHE_ROOT}/node-red-data" "${DHE_ROOT}/cbox" "${DHE_ROOT}/cbox.history" "${DHE_ROOT}/cache" "${DHE_ROOT}/timeseries" "${DHE_ROOT}/webapp" "${DHE_ROOT}/db" "${DHE_ROOT}/logs" "${DHE_ROOT}/mosquitto"
+chmod 700 "${DHE_ROOT}/mosquitto/data"
 
 # ── 6. done ──────────────────────────────────────────────────────────────────
 

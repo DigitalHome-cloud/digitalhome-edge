@@ -13,12 +13,14 @@ Application layer for **digitalhome.edge** — the local edge server running on
 
 ## Runtime shape
 
-One Docker container: Node-RED 4.0.9 with the palettes baked in at build time.
-`dhe.service` (systemd oneshot) drives `docker compose up -d/down`. All state
-under `/opt/dhe/`.
+Two Docker containers: Node-RED 4.0.9 with the palettes baked in at build time
+(`dhe-nodered`), and the Mosquitto MQTT broker for phones as end devices
+(`dhe-mosquitto`). `dhe.service` (systemd oneshot) drives
+`docker compose up -d/down`. All state under `/opt/dhe/`.
 
 - `contrib/dhc-mcp/` — MCP server surface in Node-RED (config node + tool/resource nodes + response node)
 - `contrib/dhc-sync/` — OAuth device flow client + dashboard pairing UI + telemetry loop
+- `contrib/dhc-panel/` — scan and control: one MQTT client per QR code, scopes from the twin, checked device commands for the flow (`docs/specs/panel-scan-and-control.md`)
 
 ## The golden rule
 
@@ -39,8 +41,10 @@ under `/opt/dhe/`.
 contrib/
   dhc-mcp/       MCP palette — config node + tool-in/resource-in/response
   dhc-sync/      OAuth device flow + dashboard pairing UI + telemetry loop
+  dhc-panel/     Scan and control — codes, scopes, checks (phones over MQTT)
 deploy/
-  docker-compose.yml   single node-red service
+  docker-compose.yml   node-red + mosquitto
+  mosquitto/           broker config (no anonymous access, per-code rules)
   dhe.service          systemd oneshot
   bootstrap.sh         seeds /opt/dhe/ layout
   nodered/
@@ -95,6 +99,11 @@ cache under `devices` and gets written to `/etc/hosts` by `dhcedge update-hosts`
   Carries the same room/person-name PII; written 0600, versioned to `cbox.history/`,
   runtime-only. **Never commit** (`.gitignore` blocks `deploy/cbox/cbox.jsonld`,
   `cbox.history/`, `*.cbox.jsonld`).
+- `/opt/dhe/cbox/panel-codes.json` — the panel's codes (names, scopes; no secrets) and
+  `/opt/dhe/mosquitto/data/dynamic-security.json` — the broker's clients and password
+  hashes. Runtime-only, 0600. **Never commit**; `/opt/dhe/secrets/mqtt-nodered-password`
+  is Node-RED's password on the broker. A code's secret exists only in its QR code:
+  never log or print one.
 - Node-RED credentials are encrypted in `flows_cred.json` under the userDir
   (never committed; encryption key is in `credential-secret` above).
 - Never put device IPs, API keys, tokens, or passwords in committed files.

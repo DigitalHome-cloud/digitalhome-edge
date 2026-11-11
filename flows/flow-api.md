@@ -76,6 +76,25 @@ poll). Raw responses land in `/timeseries/raw/solarman/`; Brick observations in
 
 ---
 
+## Panel (scan and control)
+
+Phones as MQTT end devices: one code per QR. Spec: `docs/specs/panel-scan-and-control.md`.
+Registered by the `dhc-panel` node (tab "Panel"), behind the same basic auth as the rest of `/api/*`.
+
+| Method | Endpoint | Body | Returns |
+|---|---|---|---|
+| GET | `/api/panel/codes` | — | `{broker: {connected}, ws_port, codes: [{id, name, scope, bell, kind, lang, online, tiles}], catalog: {floors, rooms, kinds, tiles}}` |
+| POST | `/api/panel/codes` | `{name, scope: {floors, rooms, kinds, none}, bell, lang}` | `{code, secret, ws_port}`. The secret is returned once and not kept |
+| DELETE | `/api/panel/codes/{id}` | — | Revokes the code and closes its phone's connection |
+| GET | `/api/panel/bell` | — | `{bell: {lights, chimes}, options: {lights: [{id, label, room}], chimes: [{id, label}]}}` |
+| PUT | `/api/panel/bell` | `{lights: [tile id], chimes: [chime id]}` | What a ring sets off in the house: Hue lights blink, chimes sound |
+| POST | `/api/panel/bell/test` | — | Sets them off once without ringing the phones; `{targets: n}` |
+
+The phones themselves use MQTT (broker port 9001, WebSocket), not HTTP: topics `dhc/panel/<id>/…` in the spec.
+The page they open is static: `/app/panel/#c=<id>.<secret>`.
+
+---
+
 ## Cloud Sync
 
 | Method | Endpoint | Description |

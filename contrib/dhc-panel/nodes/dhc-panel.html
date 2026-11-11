@@ -1,0 +1,72 @@
+<script type="text/javascript">
+    RED.nodes.registerType("dhc-panel", {
+        category: "digitalhome",
+        color: "#7fb7df",
+        defaults: {
+            name:         { value: "" },
+            brokerUrl:    { value: "mqtt://127.0.0.1:1883", required: true },
+            username:     { value: "dhe-nodered", required: true },
+            passwordFile: { value: "/secrets/mqtt-nodered-password", required: true },
+            wsPort:       { value: "9001", required: true, validate: RED.validators.number() },
+            registryFile: { value: "/cbox/panel-codes.json", required: true },
+            cboxFile:     { value: "/cbox/cbox.jsonld", required: true }
+        },
+        inputs: 1,
+        outputs: 2,
+        outputLabels: ["device commands (act)", "bell and phone events"],
+        icon: "font-awesome/fa-mobile",
+        label: function () { return this.name || "panel"; }
+    });
+</script>
+
+<script type="text/html" data-template-name="dhc-panel">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="panel">
+    </div>
+    <div class="form-row">
+        <label for="node-input-brokerUrl"><i class="fa fa-plug"></i> Broker</label>
+        <input type="text" id="node-input-brokerUrl">
+    </div>
+    <div class="form-row">
+        <label for="node-input-username"><i class="fa fa-user"></i> Broker user</label>
+        <input type="text" id="node-input-username">
+    </div>
+    <div class="form-row">
+        <label for="node-input-passwordFile"><i class="fa fa-key"></i> Password file</label>
+        <input type="text" id="node-input-passwordFile">
+    </div>
+    <div class="form-row">
+        <label for="node-input-wsPort"><i class="fa fa-mobile"></i> Phones' port</label>
+        <input type="text" id="node-input-wsPort">
+    </div>
+    <div class="form-row">
+        <label for="node-input-registryFile"><i class="fa fa-qrcode"></i> Codes file</label>
+        <input type="text" id="node-input-registryFile">
+    </div>
+    <div class="form-row">
+        <label for="node-input-cboxFile"><i class="fa fa-home"></i> Twin</label>
+        <input type="text" id="node-input-cboxFile">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="dhc-panel">
+    <p>Scan and control: phones as MQTT end devices. Each QR code is a broker client with a scope
+    (floors, rooms, functions). The node publishes each code's tiles and their state, and checks every
+    action a phone sends against the code's scope.</p>
+    <h3>Input</h3>
+    <dl class="message-properties">
+        <dt>topic <span class="property-type">"values"</span></dt>
+        <dd><code>payload: { source: "ccu" | "hue", values }</code>: what the devices report.
+        ccu: <code>{ "&lt;device&gt;:&lt;channel&gt;/&lt;DATAPOINT&gt;": value }</code>;
+        hue: <code>{ "&lt;uniqueid&gt;": { on, bri, reachable } }</code>.</dd>
+    </dl>
+    <h3>Outputs</h3>
+    <ol class="node-ports">
+        <li><code>topic: "act"</code>, <code>payload: { source, ref, kind, set: "on"|"level"|"setpoint", value }</code>:
+        a checked command for the flow to send to the device.</li>
+        <li><code>topic: "ring" | "answer" | "status"</code>: bell and phone events, to wire to lights or a chime.</li>
+    </ol>
+    <h3>Codes</h3>
+    <p><code>GET/POST /api/panel/codes</code>, <code>DELETE /api/panel/codes/:id</code>, behind the edge's password.</p>
+</script>

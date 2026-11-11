@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import Codes from "../components/Codes";
 
 // Native LAN edge UI (no cloud): Gatsby/React shell, live over WebSocket,
 // onboarding + LAN discovery via /app-api/*. Header toggles to the Node-RED /ui.
@@ -151,6 +152,8 @@ export default function Home() {
           <Msg m={msg.cbox || (cbox && { text: `${cbox.rooms} rooms · ${cbox.devices} devices · ${cbox.points} Brick points`, cls: "" })} />
           <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 6 }}>Builds a Brick/REC digital twin from the downloaded CCU/Hue config — rooms → devices → points, each linked to the live observation stream.</div>
         </div>
+
+        <Codes />
 
         <NetworkMap />
       </main>

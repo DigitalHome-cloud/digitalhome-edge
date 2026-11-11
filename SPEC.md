@@ -272,7 +272,33 @@ free.
 
 ---
 
+## Panel: phones as MQTT end devices (scan and control)
+
+A QR code opens only the functions of a floor, a room or a function on any phone on the
+home network; a phone at the door is the door bell. Spec:
+[`docs/specs/panel-scan-and-control.md`](docs/specs/panel-scan-and-control.md).
+
+- Second container `dhe-mosquitto` (Eclipse Mosquitto, EPL-2.0/EDL-1.0): port 1883 on loopback
+  for Node-RED, port 9001 (WebSocket) on the LAN for phones; no anonymous access, one client per code.
+- `node-red-contrib-dhc-panel` (in-tree): codes, scopes from the twin, checks; the "Panel" flow tab
+  writes to Hue and the CCU. Codes under `/api/panel/*` (basic auth) and in the web app.
+- The phone's page: `/app/panel/` (static, in `webapp/static/panel/`).
+
+| Path | Port | Auth |
+|---|---|---|
+| MQTT (Node-RED only) | 1883, loopback | broker password |
+| MQTT over WebSocket (phones) | 9001 | one name and password per QR code |
+| `/api/panel/*` | 1880 | httpNode basic auth |
+
+---
+
 ## Open Items
+
+- [x] Panel phase 1: broker, codes, tiles, family page, admin; ring and answer between phones.
+- [x] Panel phase 2: the house's own bell (Hue lights blink, Homematic chime), with settings and a test.
+- [ ] Panel: first bring-up on a box (stage), with a real phone, real lights and the real chime.
+- [ ] Panel phase 3: the door phone and stations with a face and a voice over MQTT.
+- [ ] The `/api/lights`, `/api/scene`, `/api/heating` flows are still stubs; the Panel tab's `write device` is the first real write path.
 
 - [x] Hue API key — registered and stored under `/opt/dhe/secrets/hue-api-key`
 - [x] Build initial Node-RED flows for Homematic + Hue

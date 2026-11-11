@@ -1,0 +1,42 @@
+{
+  "name": "node-red-contrib-dhc-panel",
+  "version": "0.1.0",
+  "description": "Scan and control for digitalhome.edge: phones as MQTT end devices. One revocable code per QR fixes what a phone may show and switch; the node checks every action against the code's scope and hands it to the flow as a device command.",
+  "keywords": [
+    "node-red",
+    "digitalhome",
+    "dhe",
+    "mqtt",
+    "panel"
+  ],
+  "license": "MIT",
+  "author": "digitalhome.cloud",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DigitalHome-cloud/digitalhome-edge",
+    "directory": "contrib/dhc-panel"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.0"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "node-red": {
+    "version": ">=4.0.0",
+    "nodes": {
+      "dhc-panel": "nodes/dhc-panel.js"
+    }
+  },
+  "files": [
+    "nodes/",
+    "lib/",
+    "README.md"
+  ]
+}

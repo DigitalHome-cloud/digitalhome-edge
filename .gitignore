@@ -169,5 +169,8 @@ deploy/cbox/discovered/
 # Generated per-home digital twin (rooms/devices/points) — PII (room/person names).
 # Runtime-only at /opt/dhe/cbox/cbox.jsonld; never commit.
 deploy/cbox/cbox.jsonld
+# The panel's codes (names of rooms and people's cards) and the broker's access file. Runtime-only under /opt/dhe.
+panel-codes.json
+dynamic-security.json
 deploy/cbox/cbox.history/
 *.cbox.jsonld

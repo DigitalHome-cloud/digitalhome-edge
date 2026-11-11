@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="referrer" content="no-referrer">
+<title>DigitalHome panel</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<header>
+  <h1 id="name">…</h1>
+  <span id="link" class="link down" aria-live="polite"></span>
+</header>
+<main id="main"></main>
+<p id="note" class="note"></p>
+<div id="card" class="card" hidden>
+  <div class="card-in">
+    <div id="card-icon" class="card-icon">🔔</div>
+    <p id="card-text" class="card-text"></p>
+    <div id="card-buttons" class="card-buttons"></div>
+  </div>
+</div>
+<script src="tinymqtt.js"></script>
+<script src="panel.js"></script>
+</body>
+</html>
