@@ -98,7 +98,7 @@ commands empty. The pictures already flow only during a ring either way.
 ## Parts
 
 Raspberry Pi 3 or Zero 2 W (Wi-Fi), the existing 12 V DIN supply, a 12 V → 5 V 3 A step-down for the Pi, the video converter and USB grabber (see Video), optionally a logic-level MOSFET for the camera power,
-(per step 5), USB sound card, and a small board: an optocoupler (e.g. PC817) for the call to a GPIO
+USB sound card, and a small board: an optocoupler (e.g. PC817) for the call to a GPIO
 (BCM 17 by default, active low), coupling and a small amplifier (e.g. LM386) for the speaker. Low voltage only.
 
 ## Install on the Pi
