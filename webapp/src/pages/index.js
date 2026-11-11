@@ -1,191 +1,113 @@
-import React, { useEffect, useRef, useState } from "react";
-import Codes from "../components/Codes";
+import React, { useEffect, useState } from "react";
+import { I18nProvider, LANGS, store, useI18n } from "../i18n";
+import { useEdgeStream } from "../lib/api";
+import { Devices, Network, Overview, Twin } from "../components/Status";
+import Codes, { Bell } from "../components/Codes";
+import Labels from "../components/Labels";
 
-// Native LAN edge UI (no cloud): Gatsby/React shell, live over WebSocket,
-// onboarding + LAN discovery via /app-api/*. Header toggles to the Node-RED /ui.
+// The edge portal: what this edge sees, connects and offers the house.
+// Served by Node-RED at /app; LAN only. One page, a view per #hash, every view
+// kept mounted so a QR sheet survives a look elsewhere. The D-LAB-5 design:
+// a rail on the left, panels on the page (src/styles/portal.css).
 
-const fmt = (v) => (v === null || v === undefined ? "—" : v);
-const api = (path, body, method = "POST") =>
-  fetch(`/app-api/${path}`, method === "GET" ? {} : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+const I = {
+  home: <path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" />,
+  plug: <><path d="M9 2v6M15 2v6" /><path d="M6 8h12v4a6 6 0 0 1-12 0z" /><path d="M12 18v4" /></>,
+  twin: <><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" /></>,
+  net: <><circle cx="12" cy="5" r="2" /><circle cx="5" cy="19" r="2" /><circle cx="19" cy="19" r="2" /><path d="M12 7v5M12 12l-6 5M12 12l6 5" /></>,
+  qr: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3" /></>,
+  bell: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></>,
+  words: <><path d="M4 5h7M7.5 3v2c0 4-2 7-4.5 8M5.5 9c1 2.5 3 4 5.5 4.5" /><path d="M13 21l4-9 4 9M14.5 18h5" /></>,
+  out: <><path d="M14 4h6v6M20 4l-9 9" /><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></>,
+};
+const Icon = ({ name }) => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{I[name]}</svg>
+);
 
-function useEdgeStream() {
-  const [data, setData] = useState(null);
-  const [live, setLive] = useState(false);
-  const pollRef = useRef(null);
+const SECTIONS = [
+  { label: "This edge", items: [["overview", "Overview", "home"], ["devices", "Devices", "plug"], ["twin", "Digital twin", "twin"], ["network", "Home network", "net"]] },
+  { label: "Scan and control", items: [["codes", "Codes", "qr"], ["bell", "Door bell", "bell"], ["labels", "Labels", "words"]] },
+];
+const VIEWS = SECTIONS.flatMap((s) => s.items.map((i) => i[0]));
+const LEDE = {
+  overview: "What this edge is connected to, and what it reads right now.",
+  devices: "Connect the Homematic CCU, the Hue bridge and the solar system. Only this edge talks to them.",
+  twin: "The house as data: rooms, devices and points, built from the devices' own configuration.",
+  network: "Every device on the home network, and what it is.",
+  codes: "QR codes that open only the switches of a floor, a room or a function on any phone in the house. No app, no login.",
+  bell: "A phone at the door is the bell. Choose what rings inside.",
+  labels: "Rooms and devices in English, German and French: for the phones, the cards and this portal.",
+};
+
+function useTheme() {
+  const [theme, setTheme] = useState("dark");
+  useEffect(() => { setTheme(document.documentElement.getAttribute("data-app-theme") === "light" ? "light" : "dark"); }, []);
+  const pick = (v) => { setTheme(v); document.documentElement.setAttribute("data-app-theme", v); store.set("dhe.theme", v); };
+  return [theme, pick];
+}
+
+function Portal() {
+  const { t, lang, setLang } = useI18n();
+  const { data: s, live } = useEdgeStream();
+  const [view, setView] = useState("overview");
+  const [theme, setTheme] = useTheme();
   useEffect(() => {
-    let closed = false;
-    const startPoll = () => { if (pollRef.current) return; const p = async () => { try { setData(await (await fetch("/app-api/status", { cache: "no-store" })).json()); } catch { setLive(false); } }; p(); pollRef.current = setInterval(p, 3000); };
-    const stopPoll = () => { clearInterval(pollRef.current); pollRef.current = null; };
-    const connect = () => { try { const proto = window.location.protocol === "https:" ? "wss" : "ws"; const ws = new WebSocket(`${proto}://${window.location.host}/app-api/ws`);
-      ws.onmessage = (e) => { stopPoll(); setLive(true); try { setData(JSON.parse(e.data)); } catch {} };
-      ws.onclose = () => { setLive(false); startPoll(); if (!closed) setTimeout(connect, 5000); };
-      ws.onerror = () => ws.close(); } catch { startPoll(); } };
-    connect(); startPoll();
-    return () => { closed = true; stopPoll(); };
+    const read = () => { const h = window.location.hash.slice(1); setView(VIEWS.includes(h) ? h : "overview"); };
+    read(); window.addEventListener("hashchange", read);
+    return () => window.removeEventListener("hashchange", read);
   }, []);
-  return { data, live };
-}
+  const go = (v) => { window.location.hash = v; };
+  const title = SECTIONS.flatMap((x) => x.items).find((i) => i[0] === view)[1];
+  const linked = (k) => s && s[k] && s[k].link && s[k].link.state === "linked";
 
-function Tile({ title, link, rows }) {
-  const on = link && link.state === "linked";
-  return (<div className="card"><h2>{title}<span className={"badge" + (on ? " ok" : "")}>{on ? "connected" : (link && link.state) || "—"}</span></h2>
-    {rows.map(([k, v]) => (<div className="kv" key={k}><span className="k">{k}</span><span className="v">{fmt(v)}</span></div>))}</div>);
-}
-const Msg = ({ m }) => <div className={"msg " + ((m && m.cls) || "")}>{m ? m.text : ""}</div>;
-function Onboard({ source, link, children, onConnect, connectLabel }) {
-  const on = link && link.state === "linked";
-  return (<div className="card"><h2>{{ solar: "Solar (Solarman)", ccu: "Homematic CCU", hue: "Philips Hue" }[source]}
-    <span className={"badge" + (on ? " ok" : "")}>{on ? "connected" : (link && link.state) || "—"}</span></h2>
-    {children}<button onClick={onConnect}>{connectLabel || "Connect"}</button></div>);
-}
-
-const roleColor = { gateway: "#f59e0b", integration: "#22c55e", network: "#38bdf8", device: "#64748b" };
-function NetworkMap() {
-  const [scan, setScan] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const run = async () => { setBusy(true); try { setScan(await api("lan-scan", {})); } catch { setScan({ error: "scan failed" }); } setBusy(false); };
-  const groups = [["gateway", "Gateway"], ["integration", "Integrations"], ["network", "Network / powerline (devolo)"], ["device", "Other devices"]];
-  const devs = (scan && scan.devices) || [];
   return (
-    <>
-      <div className="section-title">LAN discovery
-        <button className="ghost" style={{ marginLeft: 12 }} onClick={run} disabled={busy}>{busy ? "scanning…" : "Scan LAN"}</button>
-        {scan && !scan.error && <span className="src" style={{ marginLeft: 10 }}>{scan.count} devices on {scan.subnet}</span>}
-      </div>
-      {scan && scan.error && <div className="card"><Msg m={{ text: "✗ " + scan.error, cls: "err" }} /></div>}
-      {scan && !scan.error && (
-        <div className="net">
-          {groups.map(([role, label]) => {
-            const rows = devs.filter((d) => d.role === role);
-            if (!rows.length) return null;
-            return (
-              <div className="net-group" key={role}>
-                <div className="net-h" style={{ color: roleColor[role] }}>{label}</div>
-                {rows.map((d) => (
-                  <div className="net-row" key={d.ip}>
-                    <span className="dot2" style={{ background: roleColor[d.role] }} />
-                    <span className="ip">{d.ip}</span>
-                    <span className="ty">{d.type}{d.hostname && d.hostname !== "blocked.local" ? " · " + d.hostname : ""}</span>
-                    <span className="mac">{d.mac}</span>
-                    <span className="ports">{(d.ports || []).join(" ") || "—"}</span>
-                  </div>
-                ))}
-              </div>
-            );
-          })}
+    <div className="app-shell app-shell--railed">
+      <nav className="app-rail" aria-label="digitalhome.edge">
+        <a className="app-rail__brand" href="#overview"><span className="app-mark"><Icon name="home" /></span><span>digitalhome<span className="app-rail__brandaccent">.edge</span></span></a>
+        {SECTIONS.map((sec) => (
+          <div className="app-rail__section" key={sec.label}>
+            <h2 className="app-rail__sectionlabel">{t(sec.label)}</h2>
+            <ul className="app-rail__items">{sec.items.map(([id, label, icon]) => (
+              <li key={id}><a className={"app-rail__item" + (view === id ? " app-rail__item--on" : "")} href={"#" + id} aria-current={view === id ? "page" : undefined}>
+                <Icon name={icon} /><span>{t(label)}</span>
+                {id === "devices" && s && !(linked("ccu") || linked("hue")) && <span className="app-rail__dot" title={t("nothing connected yet")} />}
+              </a></li>))}</ul>
+          </div>
+        ))}
+        <div className="app-rail__foot">
+          <ul className="app-rail__items"><li><a className="app-rail__item" href="/ui"><Icon name="out" /><span>{t("Node-RED dashboard")}</span></a></li></ul>
+          <div className="app-seg" role="group" aria-label={t("Language")}>{LANGS.map((l) => (
+            <button key={l.id} className={"app-seg__option" + (lang === l.id ? " app-seg__option--on" : "")} onClick={() => setLang(l.id)} title={l.name}>{l.id}</button>))}</div>
+          <div className="app-seg" role="group" aria-label={t("Theme")}>{["dark", "light"].map((v) => (
+            <button key={v} className={"app-seg__option" + (theme === v ? " app-seg__option--on" : "")} onClick={() => setTheme(v)}>{t(v)}</button>))}</div>
+          <p className="app-rail__note">{t("Home network only. Nothing here leaves the house.")}</p>
         </div>
-      )}
-      {!scan && <div className="card" style={{ color: "var(--muted)" }}>Crawls the /24, reads ARP for MACs, identifies vendors (Raspberry Pi=CCU, Signify=Hue, devolo, AVM…), reverse-DNS, ports, and role.</div>}
-    </>
+      </nav>
+
+      <div className="app-shell__body">
+        <header className="app-shell__header">
+          <h1 className="app-shell__title">{t(title)}</h1>
+          <span className="app-shell__spacer" />
+          <span className={"app-dot" + (live ? " app-dot--on" : "")} />
+          <span className="app-shell__meta">{s ? t("updated {time}", { time: new Date(s.ts).toLocaleTimeString(lang) }) + " · " + (live ? t("live") : t("polling")) : t("connecting…")}</span>
+        </header>
+        <main className="app-shell__main">
+          <p className="app-lede">{t(LEDE[view])}</p>
+          <div hidden={view !== "overview"} style={{ display: "contents" }}><Overview s={s} go={go} /></div>
+          <div hidden={view !== "devices"} style={{ display: "contents" }}><Devices s={s} /></div>
+          <div hidden={view !== "twin"} style={{ display: "contents" }}><Twin s={s} /></div>
+          <div hidden={view !== "network"} style={{ display: "contents" }}><Network /></div>
+          <div hidden={view !== "codes"} style={{ display: "contents" }}><Codes active={view === "codes"} /></div>
+          <div hidden={view !== "bell"} style={{ display: "contents" }}><Bell active={view === "bell"} /></div>
+          <div hidden={view !== "labels"} style={{ display: "contents" }}><Labels active={view === "labels"} /></div>
+        </main>
+      </div>
+    </div>
   );
 }
 
 export default function Home() {
-  const { data: s, live } = useEdgeStream();
-  const [f, setF] = useState({ solarEmail: "", solarPass: "", ccuIp: "", ccuToken: "", hueIp: "" });
-  const [msg, setMsg] = useState({});
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const say = (src, text, cls) => setMsg((m) => ({ ...m, [src]: { text, cls } }));
-  const scan = async (source) => { say(source, "scanning…", "busy"); try { const j = await api("scan", { source });
-    if (j.candidates && j.candidates.length) { setF((x) => ({ ...x, [source + "Ip"]: j.candidates[0].ip })); say(source, "found: " + j.candidates.map((c) => c.ip).join(", "), "ok"); }
-    else say(source, `no ${source.toUpperCase()} found on ${j.subnet || "?"}.0/24`, "err"); } catch { say(source, "scan failed", "err"); } };
-  const connect = async (source) => { let body = { source };
-    if (source === "ccu") body = { source, ip: f.ccuIp.trim(), token: f.ccuToken.trim() };
-    else if (source === "hue") { body = { source, ip: f.hueIp.trim() }; say("hue", "pairing… press the bridge button now (up to 30s)", "busy"); }
-    else if (source === "solar") body = { source, email: f.solarEmail.trim(), password: f.solarPass };
-    if (source !== "hue") say(source, "connecting…", "busy");
-    try { const j = await api("connect", body); say(source, (j.ok ? "✓ " : "✗ ") + (j.message || (j.ok ? "connected" : "failed")), j.ok ? "ok" : "err"); if (source === "solar") setF((x) => ({ ...x, solarPass: "" })); } catch { say(source, "request failed", "err"); } };
-  const configPull = async (source) => { say(source + "cfg", "downloading config…", "busy");
-    try { const j = await api("config-pull", { source });
-      const parts = source === "ccu" ? `${j.rooms} rooms · ${j.functions} functions · ${j.devices} devices` : `${j.lights} lights · ${j.rooms} rooms · ${j.scenes} scenes · ${j.sensors} sensors`;
-      say(source + "cfg", (j.ok ? "✓ " : "✗ ") + (j.ok ? parts : j.message), j.ok ? "ok" : "err");
-    } catch { say(source + "cfg", "request failed", "err"); } };
-  const genCbox = async () => { say("cbox", "generating digital twin…", "busy");
-    try { const j = await api("cbox-generate", {}); say("cbox", (j.ok ? "✓ " : "✗ ") + (j.ok ? `${j.rooms} rooms · ${j.devices} devices · ${j.points} points` : j.message), j.ok ? "ok" : "err"); }
-    catch { say("cbox", "request failed", "err"); } };
-
-  const solar = (s && s.solar) || {}, ccu = (s && s.ccu) || {}, hue = (s && s.hue) || {}, pl = (s && s.pipeline) || {};
-  const sd = (solar.latest && solar.latest.data) || {};
-  const cfg = (s && s.config) || {};
-  const cbox = (s && s.cbox) || null;
-  return (
-    <>
-      <header>
-        <span className={"dot" + (live ? " live" : "")} />
-        <h1>digitalhome.edge</h1>
-        <span className="badge">{s ? "updated " + new Date(s.ts).toLocaleTimeString() : "connecting…"}</span>
-        <span className="src">{live ? "live · websocket" : "polling"}</span>
-        <a className="toggle" href="/ui">Node-RED dashboard →</a>
-      </header>
-      <main>
-        <div className="grid">
-          <Tile title="Solar" link={solar.link} rows={[["Account", solar.link && solar.link.email], ["PV power", sd.generationPower != null ? sd.generationPower + " W" : "—"], ["Load", sd.usePower != null ? sd.usePower + " W" : "—"], ["Battery", sd.batterySoc != null ? sd.batterySoc + " %" : "—"]]} />
-          <Tile title="CCU" link={ccu.link} rows={[["IP", ccu.link && ccu.link.ip], ["Devices", ccu.latest && ccu.latest.devices], ["Datapoints", ccu.latest && ccu.latest.datapoints]]} />
-          <Tile title="Hue" link={hue.link} rows={[["IP", hue.link && hue.link.ip], ["Sensors", hue.latest && hue.latest.sensors], ["Lights", hue.latest && hue.latest.lights]]} />
-          <Tile title="Pipeline" link={{ state: pl.recent_mapped ? "linked" : "idle" }} rows={[["Sources", (pl.sources || []).join(", ") || "—"], ["Mappings", pl.counts ? pl.counts.sourceMap + " fields" : "—"], ["Recent obs", pl.recent_mapped]]} />
-        </div>
-
-        <div className="section-title">Onboarding</div>
-        <div className="grid">
-          <Onboard source="solar" link={solar.link} onConnect={() => connect("solar")}>
-            <input placeholder="Solarman email" value={f.solarEmail} onChange={set("solarEmail")} />
-            <input type="password" placeholder="Solarman password" value={f.solarPass} onChange={set("solarPass")} /><Msg m={msg.solar} />
-          </Onboard>
-          <Onboard source="ccu" link={ccu.link} onConnect={() => connect("ccu")}>
-            <button className="ghost" onClick={() => scan("ccu")}>Scan network</button>
-            <input placeholder="CCU IP" value={f.ccuIp} onChange={set("ccuIp")} />
-            <input placeholder="API token (recommended)" value={f.ccuToken} onChange={set("ccuToken")} /><Msg m={msg.ccu} />
-            {ccu.link && ccu.link.state === "linked" && (<><button className="ghost" onClick={() => configPull("ccu")}>Update config</button><Msg m={msg.ccucfg || (cfg.ccu && { text: `${cfg.ccu.rooms} rooms · ${cfg.ccu.devices} devices`, cls: "" })} /></>)}
-          </Onboard>
-          <Onboard source="hue" link={hue.link} onConnect={() => connect("hue")} connectLabel="Connect (press bridge button)">
-            <button className="ghost" onClick={() => scan("hue")}>Scan network</button>
-            <input placeholder="Hue bridge IP" value={f.hueIp} onChange={set("hueIp")} /><Msg m={msg.hue} />
-            {hue.link && hue.link.state === "linked" && (<><button className="ghost" onClick={() => configPull("hue")}>Update config</button><Msg m={msg.huecfg || (cfg.hue && { text: `${cfg.hue.lights} lights · ${cfg.hue.rooms} rooms`, cls: "" })} /></>)}
-          </Onboard>
-        </div>
-
-        <div className="section-title">Digital twin (C-BOX)
-          <button className="ghost" style={{ marginLeft: 12 }} onClick={genCbox}>Generate C-BOX</button>
-          {cbox && <a className="src" style={{ marginLeft: 10 }} href="/app-api/cbox" target="_blank" rel="noreferrer">download JSON-LD</a>}
-        </div>
-        <div className="card">
-          <Msg m={msg.cbox || (cbox && { text: `${cbox.rooms} rooms · ${cbox.devices} devices · ${cbox.points} Brick points`, cls: "" })} />
-          <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 6 }}>Builds a Brick/REC digital twin from the downloaded CCU/Hue config — rooms → devices → points, each linked to the live observation stream.</div>
-        </div>
-
-        <Codes />
-
-        <NetworkMap />
-      </main>
-      <footer>digitalhome.edge · LAN-only · React shell + /app-api backend</footer>
-      <style>{css}</style>
-    </>
-  );
+  return <I18nProvider><Portal /></I18nProvider>;
 }
-
-const css = `
-  :root{--bg:#0f172a;--card:#1e293b;--line:rgba(148,163,184,.25);--fg:#e2e8f0;--muted:#94a3b8;--ok:#22c55e;--off:#64748b;--accent:#38bdf8;--err:#ef4444}
-  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-  header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
-  header h1{font-size:18px;margin:0;font-weight:600}
-  .toggle{margin-left:auto;font-size:13px;color:var(--accent);text-decoration:none;border:1px solid var(--line);padding:6px 12px;border-radius:8px}
-  .dot{width:9px;height:9px;border-radius:50%;background:var(--off)} .dot.live{background:var(--ok);box-shadow:0 0 8px var(--ok)} .src{font-size:11px;color:var(--muted)}
-  main{max-width:1000px;margin:0 auto;padding:24px}
-  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
-  .card h2{font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:0 0 12px;display:flex;align-items:center;gap:8px}
-  .badge{font-size:12px;padding:2px 8px;border-radius:999px;background:rgba(100,116,139,.25);color:var(--muted)} .badge.ok{background:rgba(34,197,94,.15);color:var(--ok)}
-  .kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed rgba(148,163,184,.12)} .kv:last-child{border:0} .kv .k{color:var(--muted)} .kv .v{font-variant-numeric:tabular-nums}
-  .section-title{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.05em;margin:28px 4px 12px;display:flex;align-items:center}
-  input{width:100%;margin:6px 0;padding:9px 11px;background:#0b1324;border:1px solid var(--line);border-radius:8px;color:var(--fg);font-size:14px}
-  button{padding:9px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:14px;cursor:pointer;margin:4px 6px 4px 0} button.ghost{background:#334155} button:disabled{opacity:.5}
-  .msg{font-size:13px;margin-top:8px;min-height:18px} .msg.ok{color:var(--ok)} .msg.err{color:var(--err)} .msg.busy{color:var(--accent)}
-  .net{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 16px}
-  .net-group{padding:10px 0;border-bottom:1px solid rgba(148,163,184,.12)} .net-group:last-child{border:0}
-  .net-h{font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin:4px 0 8px}
-  .net-row{display:grid;grid-template-columns:14px 110px 1fr 150px 90px;gap:10px;align-items:center;padding:4px 0;font-size:13px}
-  .dot2{width:9px;height:9px;border-radius:50%} .net-row .ip{font-variant-numeric:tabular-nums} .net-row .ty{color:var(--fg)} .net-row .mac{color:var(--muted);font-family:ui-monospace,monospace;font-size:12px} .net-row .ports{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
-  footer{text-align:center;color:var(--muted);font-size:12px;padding:18px} a{color:var(--accent)}
-`;
 
 export const Head = () => <title>digitalhome.edge</title>;

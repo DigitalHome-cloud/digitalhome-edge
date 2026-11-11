@@ -27,7 +27,9 @@ var Q = {};
 location.hash.slice(1).split('&').forEach(function (kv) { var i = kv.indexOf('='); if (i > 0) Q[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1)); });
 var parts = (Q.c || '').split('.'), ID = parts[0], SECRET = parts[1];
 var BASE = 'dhc/panel/' + ID + '/';
-var lang = (navigator.language || 'en').slice(0, 2); if (!TEXTS[lang]) lang = 'en';
+// The code's language travels in the QR link (&l=), so the first screen already speaks it.
+var lang = Q.l || (navigator.language || 'en').slice(0, 2); if (!TEXTS[lang]) lang = 'en';
+document.documentElement.lang = lang;
 var scope = null, state = {}, pending = {}, link = null, audio = null, ringTimer = 0, cardTimer = 0;
 
 function t(k) { return TEXTS[lang][k] || TEXTS.en[k] || k; }

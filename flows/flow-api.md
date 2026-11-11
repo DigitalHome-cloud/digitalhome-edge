@@ -89,9 +89,12 @@ Registered by the `dhc-panel` node (tab "Panel"), behind the same basic auth as 
 | GET | `/api/panel/bell` | — | `{bell: {lights, chimes}, options: {lights: [{id, label, room}], chimes: [{id, label}]}}` |
 | PUT | `/api/panel/bell` | `{lights: [tile id], chimes: [chime id]}` | What a ring sets off in the house: Hue lights blink, chimes sound |
 | POST | `/api/panel/bell/test` | — | Sets them off once without ringing the phones; `{targets: n}` |
+| GET | `/api/panel/labels` | — | `{langs: ["en","de","fr"], entries: [{original, where: ["room"\|"tile"\|"chime"], rooms, en, de, fr}]}`: every word the home shows; `where: []` = translated but no longer in the twin |
+| PUT | `/api/panel/labels` | `{"<original>": {en, de, fr}}` | `{changed: n}`. `""` removes a language; the phones get the new words at once |
 
 The phones themselves use MQTT (broker port 9001, WebSocket), not HTTP: topics `dhc/panel/<id>/…` in the spec.
-The page they open is static: `/app/panel/#c=<id>.<secret>`.
+The page they open is static: `/app/panel/#c=<id>.<secret>&l=<lang>` (`l`: the code's language, so the first
+screen speaks it before the broker answers).
 
 ---
 

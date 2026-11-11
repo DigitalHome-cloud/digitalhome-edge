@@ -6,8 +6,9 @@
 //          (a tap on a tile, or kind "bell": a light to blink, a chime to sound, when the bell rings)
 //   out 2: { topic: "ring" | "answer" | "status", payload: {...} }                  bell and phone events
 //
-// The codes are managed over HTTP under /api/panel/*, which sits behind the
-// edge's basic-auth middleware like every other /api/* route.
+// The codes, the bell and the label dictionary are managed over HTTP under
+// /api/panel/*, which sits behind the edge's basic-auth middleware like every
+// other /api/* route.
 
 "use strict";
 
@@ -118,6 +119,11 @@ module.exports = function (RED) {
         try { engine.registry.setBell(req.body || {}); res.json(engine.bellSettings()); } catch (err) { res.status(400).json({ error: err.message }); }
     });
     RED.httpNode.post("/api/panel/bell/test", (req, res) => { if (need(res)) res.json({ targets: engine.setOffBell("test") }); });
+    RED.httpNode.get("/api/panel/labels", (req, res) => { if (need(res)) res.json(engine.labelEntries()); });
+    RED.httpNode.put("/api/panel/labels", json, (req, res) => {
+        if (!need(res)) return;
+        try { res.json({ changed: engine.setLabels(req.body || {}) }); } catch (err) { res.status(400).json({ error: err.message }); }
+    });
     RED.httpNode.delete("/api/panel/codes/:id", (req, res) => {
         if (!need(res)) return;
         engine.revokeCode(req.params.id).then(

@@ -57,10 +57,22 @@ Node-RED settings.js: httpStatic: [{ path:'/webapp', root:'/app/' }]
 
 ## The webapp (`webapp/`)
 
-A minimal Gatsby project (real, buildable):
-- `package.json` (gatsby, react, react-dom), `gatsby-config.js` with `pathPrefix: '/app'`.
-- `src/pages/index.js` — polls `/app-api/status`, renders Solar/CCU/Hue tiles + a **Connect**
-  panel (scan → IP → connect) hitting `/app-api/scan` + `/app-api/connect`.
+The **edge portal**: a Gatsby project in the D-LAB-5 design (as the Python edges made from
+template-dlab5-edge and the clouds made from template-dlab5-cloud look: a rail on the left,
+panels on the page, the same `--app-*` tokens and `.app-*` classes, dark and light).
+- `package.json` (gatsby, react, react-dom, qrcode), `gatsby-config.js` with `pathPrefix: '/app'`.
+- `src/pages/index.js` — the shell: the rail and one view per `#hash`, every view kept mounted
+  (a QR sheet survives a look elsewhere). Views: *This edge* — Overview, Devices (connect Solar,
+  CCU, Hue), Digital twin, Home network; *Scan and control* — Codes, Door bell, Labels.
+- `src/components/Status.js` — the views over `/app-api/*` (open on the LAN).
+  `Codes.js`, `Labels.js` — the views over `/api/panel/*` (behind the edge's password).
+- `src/styles/portal.css` — tokens in both themes; `gatsby-ssr.js` sets the theme before paint.
+- `src/i18n/` — EN/DE/FR for the portal's own words, **keyed on the English text**:
+  `t("Scan network")`; a missing entry shows English. `npm run i18n-check` fails on a text
+  without a German or French entry and lists entries nothing uses.
+- The home's own words (rooms, devices) are keyed the same way, on the name they have in the
+  CCU or the Hue app, but live on the edge (`/opt/dhe/cbox/labels.json`, edited in *Labels*),
+  because the phones need them too: see `docs/specs/panel-scan-and-control.md` → Labels.
 - Build output `webapp/public/` is what gets served.
 
 **Prototype shortcut:** since a full `gatsby build` is heavy, this change also ships a

@@ -101,7 +101,8 @@ cache under `devices` and gets written to `/etc/hosts` by `dhcedge update-hosts`
   `cbox.history/`, `*.cbox.jsonld`).
 - `/opt/dhe/cbox/panel-codes.json` — the panel's codes (names, scopes; no secrets) and
   `/opt/dhe/mosquitto/data/dynamic-security.json` — the broker's clients and password
-  hashes. Runtime-only, 0600. **Never commit**; `/opt/dhe/secrets/mqtt-nodered-password`
+  hashes; `/opt/dhe/cbox/labels.json` — the label dictionary (room and device names in
+  EN/DE/FR). Runtime-only, 0600. **Never commit**; `/opt/dhe/secrets/mqtt-nodered-password`
   is Node-RED's password on the broker. A code's secret exists only in its QR code:
   never log or print one.
 - Node-RED credentials are encrypted in `flows_cred.json` under the userDir
@@ -188,6 +189,12 @@ sudo dhcedge show-secrets     # MCP token + Node-RED credentials
 Full install / bring-up procedure lives at `docs/install.md`.
 
 ## Web UX
+
+The **edge portal** at `:1880/app/` (`webapp/`, Gatsby, D-LAB-5 design: a rail and
+panels, EN/DE/FR) is where the edge is set up: devices, the twin, the network, the
+phones' codes, the door bell and the label dictionary. Its own words are keyed on the
+English text (`webapp/src/i18n/`, check with `npm run i18n-check`); the home's words are
+keyed on the name from the CCU or Hue (`/api/panel/labels`).
 
 Operational UI (device control, scenes, sensors) → **Node-RED Dashboard v2**
 (`@flowfuse/node-red-dashboard`) at `:1880/dashboard`. No separate frontend

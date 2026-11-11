@@ -21,6 +21,7 @@ const { EventEmitter } = require("events");
 const tiles = require("./tiles");
 const dynsec = require("./dynsec");
 const { Registry } = require("./registry");
+const { Labels } = require("./labels");
 
 const ANSWERS = ["coming", "wait", "leave"];
 const MAX_PAYLOAD = 512;
@@ -38,6 +39,7 @@ class Engine extends EventEmitter {
      * @param {string} o.password
      * @param {string} o.registryFile
      * @param {string} o.cboxFile
+     * @param {string} [o.labelsFile]  the home's words in EN/DE/FR (lib/labels.js)
      * @param {function} [o.log]     (level, text)
      */
     constructor(o) {
@@ -45,6 +47,8 @@ class Engine extends EventEmitter {
         this.o = o;
         this.log = o.log || (() => {});
         this.registry = new Registry(o.registryFile);
+        this.labels = new Labels(o.labelsFile || require("path").join(require("path").dirname(o.registryFile), "labels.json"));
+        if (this.labels.error) this.log("error", "cannot read the labels: " + this.labels.error);
         this.catalog = { rooms: [], floors: [], tiles: [], kinds: tiles.KINDS };
         this.cboxStamp = 0;
         this.values = { ccu: new Map(), hue: new Map() };
@@ -73,7 +77,11 @@ class Engine extends EventEmitter {
         this.client.on("message", (topic, payload) => {
             try { this.onMessage(topic, payload); } catch (err) { this.log("error", "message on " + topic + ": " + err.message); }
         });
-        this.timer = setInterval(() => { if (this.loadCatalog() && this.connected) this.publishAll(); }, 30000);
+        this.timer = setInterval(() => {
+            let changed = this.loadCatalog();
+            try { changed = this.labels.reload() || changed; } catch (err) { this.log("error", "cannot read the labels: " + err.message); }
+            if (changed && this.connected) this.publishAll();
+        }, 30000);
         if (this.timer.unref) this.timer.unref();
     }
 
@@ -179,7 +187,7 @@ class Engine extends EventEmitter {
 
     publishScope(code) {
         const list = this.scopeTiles(code);
-        this.retained(dynsec.topicOf(code.id, "scope"), { name: code.name, lang: code.lang, bell: code.bell, tiles: tiles.publicTiles(this.catalog, list) });
+        this.retained(dynsec.topicOf(code.id, "scope"), { name: code.name, lang: code.lang, bell: code.bell, tiles: tiles.publicTiles(this.catalog, list, (w) => this.labels.tr(w, code.lang)) });
         this.publishState(code, list);
     }
 
@@ -322,8 +330,20 @@ class Engine extends EventEmitter {
         return {
             broker: { connected: this.connected },
             codes: this.registry.codes.map((c) => Object.assign({}, c, { online: !!this.online.get(c.id), tiles: this.scopeTiles(c).length })),
-            catalog: { floors: this.catalog.floors, kinds: this.catalog.kinds, rooms: this.catalog.rooms.map((r) => ({ id: r.id, label: r.label, floor: r.floor, source: r.source })), tiles: this.catalog.tiles.length },
+            catalog: { floors: this.catalog.floors, kinds: this.catalog.kinds, rooms: this.catalog.rooms.map((r) => ({ id: r.id, label: r.label, name: tiles.plainRoom(r.label), floor: r.floor, source: r.source })), tiles: this.catalog.tiles.length },
         };
+    }
+
+    /** The label dictionary: every word the home shows, and its translations. */
+    labelEntries() {
+        return { langs: ["en", "de", "fr"], entries: this.labels.entries(tiles.homeWords(this.catalog)) };
+    }
+
+    /** Change translations ({ original: { en, de, fr } }); the phones get the new words at once. */
+    setLabels(changes) {
+        const n = this.labels.set(changes);
+        if (n && this.connected) this.publishAll();
+        return n;
     }
 
     async createCode(input) {

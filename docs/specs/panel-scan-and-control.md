@@ -1,7 +1,7 @@
 # Scan and control — phones as MQTT end devices
 
-**Status:** v0.2, phases 1 and 2 built (broker, codes, tiles, family page; the bell with ring, answer, Hue blink
-and chime); not yet deployed on a box · **Date:** 2026-11-11
+**Status:** v0.3, phases 1 and 2 running on the stage box; labels in EN/DE/FR and the code's language on its
+card · **Date:** 2026-11-11
 
 ## Why
 
@@ -38,7 +38,7 @@ A code is one client of the broker (Mosquitto Dynamic Security): its id is the u
 | `scope` | `{ floors: [n], rooms: [room id], kinds: ["light"\|"switch"\|"blind"\|"heating"], none }`. No floors and no rooms: the whole house. No kinds: every function. `none`: no tiles at all |
 | `bell` | `none`, `listen` (rings with the door bell, may answer), `ring` (is the door bell) |
 | `kind` | `panel` (a family phone); `phone` is reserved for the stationary face (phase 3) |
-| `lang` | `en`, `de`, `fr`: the page's words |
+| `lang` | `en`, `de`, `fr`: the default language of the code: its printed card, its phone page, the home's words on it |
 
 - **The secret is not kept on the edge.** It exists in the QR code and, hashed, in the broker. The registry
   `/opt/dhe/cbox/panel-codes.json` (0600) holds ids, names and scopes only. A lost card is revoked and made anew.
@@ -65,13 +65,39 @@ Door locks and alarm functions are not to be added here. Functions (`kinds`): Hu
 `light`; a Homematic switch is `switch`, because the twin cannot tell a lamp from a socket. A CCU name that
 starts with its device type is shown without it; a room "0.Kitchen" is shown as "Kitchen".
 
+## Labels
+
+The home's words, in the code's language. A room or a device keeps the name it has in the CCU or the Hue app:
+**that name is the key**, as the edge shows it (a CCU name without its device type, a room without its floor
+number). A translation is looked up by it; a missing one shows the name itself, so nothing is ever blank.
+
+- One dictionary per edge: `/opt/dhe/cbox/labels.json` (0600, runtime only: it holds room and device names),
+  `{ version: 1, labels: { "<original>": { en, de, fr } } }`, read again when it changes.
+- Edited in the edge portal (*Labels*: every word of the twin, filter by kind or by what is missing in a
+  language) or over `GET`/`PUT /api/panel/labels`.
+- The node translates the tiles and rooms of each code's `scope` into that code's `lang`. A change reaches the
+  phones at once (the retained `scope` is published again).
+- Words that leave the twin keep their translations and are listed as no longer in the twin.
+- The portal uses the same dictionary for room names on its own screens and on the printed cards.
+
+## Cards
+
+A card is one QR code with its name, where it applies and how to use it. It is printed and scanned, so it is
+always light on white, in either theme, and it speaks **its code's language**, not the portal's:
+
+- a badge in the corner: `EN`, `DE` or `FR`;
+- the scope line (floors, rooms, functions) and the hint under the QR in that language, rooms from the label
+  dictionary;
+- the link in the QR carries it too, `#c=<id>.<secret>&l=<lang>`, so the phone page speaks it from the
+  first screen, before the broker sends the scope.
+
 ## Topics
 
 All under `dhc/panel/<code id>/`. JSON payloads, at most 512 bytes from a phone.
 
 | Topic | Direction | Payload |
 |---|---|---|
-| `scope` | edge → phone, retained | `{ name, lang, bell, tiles: [{ id, kind, func, label, room }] }`. No device references |
+| `scope` | edge → phone, retained | `{ name, lang, bell, tiles: [{ id, kind, func, label, room }] }`. Labels and rooms in `lang`. No device references |
 | `state` | edge → phone, retained | `{ <tile id>: { on, level, setpoint, temp, reachable } }` |
 | `event` | edge → phone | `{ t: "ring", ringId, from }` · `{ t: "rung", listeners }` · `{ t: "answer", answer, by }` · `{ t: "answered", answer, by }` · `{ t: "refused", tile, why }` |
 | `act` | phone → edge | `{ tile, action: "on"\|"off"\|"level"\|"setpoint", value }`. At most 30 in 10 s per code |
@@ -106,8 +132,9 @@ A ring from a `ring` code goes to every `listen` code as an event, and sets off 
 
 - **Family page** `webapp/static/panel/` → `/app/panel/`: plain ES2017, no libraries, its own small MQTT client
   (`tinymqtt.js`). The code sits after the `#`, so it is never sent to a web server. `&p=<port>` overrides 9001.
-- **Admin**: the web app's "Scan and control" section (`webapp/src/components/Codes.js`): make a code, see its QR
-  once, print the sheet, see which codes are in use, revoke.
+- **Admin**: the edge portal's "Scan and control" views (`webapp/src/components/Codes.js`, `Labels.js`): make a
+  code and choose its language, see its card once, print the sheet, see which codes are in use, revoke; the
+  door bell; the label dictionary.
 
 ## Limits
 

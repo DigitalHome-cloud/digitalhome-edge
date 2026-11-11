@@ -1,162 +1,183 @@
 import React, { useEffect, useState } from "react";
+import { LANGS, tIn, useI18n } from "../i18n";
+import { NeedPassword, panelApi, toggle, useHomeWords } from "../lib/api";
 
 // Scan and control: make, print and revoke the QR codes that let a phone show
-// and switch a part of the house (docs/specs/panel-scan-and-control.md).
-// Talks to /api/panel/codes, which is behind the edge's password: the browser
-// asks for it once (user dhcedge; `sudo dhcedge show-secrets`).
+// and switch a part of the house (docs/specs/panel-scan-and-control.md), and
+// choose what a ring sets off. Over /api/panel/*, behind the edge's password.
 //
 // A code's secret exists only in its QR code: the edge does not keep it. So a
 // code is shown here once, right after it is made. Lost? Revoke it, make a new one.
+// Each card speaks its code's language: the badge, the words under the QR, the
+// room names, and the phone page it opens (&l= in the link).
 
-// The twin cannot tell a lamp on a Homematic switch from a socket: those are "switches".
 const KIND_LABEL = { light: "Lights (Hue, dimmers)", switch: "Switches and sockets", blind: "Blinds", heating: "Heating" };
 const BELL_LABEL = { none: "no bell", listen: "rings with the door bell", ring: "is the door bell" };
-
-async function call(method, path, body) {
-  const r = await fetch("/api/panel/" + path, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined, cache: "no-store" });
-  if (r.status === 401) throw new Error("password needed (user dhcedge)");
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || "request failed (" + r.status + ")");
-  return j;
-}
-
-const toggle = (list, v) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+const LOCAL = /\/\/(localhost|127\.|\[::1\])/;
 
 function Qr({ text }) {
   const [src, setSrc] = useState("");
-  useEffect(() => { let on = true; import("qrcode").then((m) => (m.default || m).toDataURL(text, { margin: 1, width: 480, errorCorrectionLevel: "M" })).then((u) => on && setSrc(u), () => {}); return () => { on = false; }; }, [text]);
-  return src ? <img className="qr" src={src} alt="QR code" /> : <div className="qr" />;
+  useEffect(() => {
+    let on = true;
+    import("qrcode").then((m) => (m.default || m).toDataURL(text, { margin: 1, width: 480, errorCorrectionLevel: "M" })).then((u) => on && setSrc(u), () => {});
+    return () => { on = false; };
+  }, [text]);
+  return src ? <img className="dhe-card__qr" src={src} alt="QR" /> : <div className="dhe-card__qr" />;
 }
 
-export default function Codes() {
+export function PasswordNote({ err, retry }) {
+  const { t } = useI18n();
+  if (!err) return null;
+  const need = err instanceof NeedPassword;
+  return (
+    <div className="app-empty">
+      <p className={need ? "" : "app-msg--err"}>{need ? t("This part needs the edge's password: user dhcedge, the password from `sudo dhcedge show-secrets`.") : "✗ " + err.message}</p>
+      <button className="app-button app-button--ghost app-button--small" onClick={retry}>{t("Try again")}</button>
+    </div>
+  );
+}
+
+// Where a code applies, in a given language (the portal's, or the card's).
+function whereText(c, cat, word, lang) {
+  const s = c.scope || {};
+  if (s.none) return tIn(lang, "bell only");
+  const rooms = new Map(cat.rooms.map((r) => [r.id, r.name || r.label]));
+  const parts = [...(s.floors || []).map((n) => tIn(lang, "floor {n}", { n })), ...(s.rooms || []).map((id) => word(rooms.get(id) || "?", lang))];
+  return (parts.join(", ") || tIn(lang, "whole house")) + ((s.kinds || []).length ? " · " + s.kinds.map((k) => tIn(lang, KIND_LABEL[k])).join(", ") : "");
+}
+
+export default function Codes({ active }) {
+  const { t, lang } = useI18n();
   const [data, setData] = useState(null);
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState(null);
   const [made, setMade] = useState([]);   // codes made in this visit: the only moment their QR exists
   const [base, setBase] = useState("");
-  const [bell, setBell] = useState(null);   // what a ring sets off in the house, and what could
-  const [bellMsg, setBellMsg] = useState("");
-  const [f, setF] = useState({ name: "", floors: [], rooms: [], kinds: [], bell: "none", lang: "en" });
+  const [f, setF] = useState({ name: "", floors: [], rooms: [], kinds: [], bell: "none", lang: null });
+  const word = useHomeWords(lang, !!data);
 
-  const load = () => call("GET", "codes").then((j) => { setData(j); setErr(""); return call("GET", "bell").then(setBell); }).catch((e) => setErr(e.message));
-  const pickBell = (kind, id) => { const next = { ...bell.bell, [kind]: toggle(bell.bell[kind], id) }; setBell({ ...bell, bell: next }); call("PUT", "bell", next).then(setBell, (e) => setErr(e.message)); };
-  const testBell = () => call("POST", "bell/test").then((j) => setBellMsg(j.targets ? `sent to ${j.targets}` : "nothing ticked"), (e) => setBellMsg(e.message));
+  const load = () => panelApi("GET", "codes").then((j) => { setData(j); setErr(null); }, setErr);
+  useEffect(() => { if (active && !data) load(); }, [active]);
+  useEffect(() => { if (!active || !data) return undefined; const id = setInterval(load, 5000); return () => clearInterval(id); }, [active, !!data]);
   useEffect(() => { setBase(window.location.origin); }, []);
   // Opened on the edge itself (localhost): the phones need its address on the home network instead.
   useEffect(() => {
     const lan = data && data.lan && data.lan[0];
-    if (!lan || !/\/\/(localhost|127\.|\[::1\])/.test(window.location.origin)) return;
-    setBase((b) => (/\/\/(localhost|127\.|\[::1\])/.test(b) ? `http://${lan}${window.location.port ? ":" + window.location.port : ""}` : b));
+    if (!lan || !LOCAL.test(window.location.origin)) return;
+    setBase((b) => (LOCAL.test(b) ? `http://${lan}${window.location.port ? ":" + window.location.port : ""}` : b));
   }, [data && data.lan && data.lan[0]]);
-  useEffect(() => { if (!data) return undefined; const t = setInterval(load, 5000); return () => clearInterval(t); }, [!!data]);
 
+  const codeLang = f.lang || lang;
   const make = async () => {
     try {
-      const j = await call("POST", "codes", { name: f.name, bell: f.bell, lang: f.lang, scope: { floors: f.floors, rooms: f.rooms, kinds: f.kinds } });
+      const j = await panelApi("POST", "codes", { name: f.name, bell: f.bell, lang: codeLang, scope: { floors: f.floors, rooms: f.rooms, kinds: f.kinds } });
       setMade((m) => [{ ...j.code, secret: j.secret, port: j.ws_port }, ...m]);
-      setF({ ...f, name: "" }); setErr(""); load();
-    } catch (e) { setErr(e.message); }
+      setF({ ...f, name: "" }); setErr(null); load();
+    } catch (e) { setErr(e); }
   };
   const revoke = async (c) => {
-    if (!window.confirm(`Revoke "${c.name}"? Every phone and printed card with this code stops working.`)) return;
-    try { await call("DELETE", "codes/" + c.id); setMade((m) => m.filter((x) => x.id !== c.id)); load(); } catch (e) { setErr(e.message); }
+    if (!window.confirm(t("Revoke \"{name}\"? Every phone and printed card with this code stops working.", { name: c.name }))) return;
+    try { await panelApi("DELETE", "codes/" + c.id); setMade((m) => m.filter((x) => x.id !== c.id)); load(); } catch (e) { setErr(e); }
   };
-  const link = (c) => `${base.replace(/\/+$/, "")}/app/panel/#c=${c.id}.${c.secret}${c.port && c.port !== 9001 ? "&p=" + c.port : ""}`;
-  const local = /\/\/(localhost|127\.|\[::1\])/.test(base);
+  const link = (c) => `${base.replace(/\/+$/, "")}/app/panel/#c=${c.id}.${c.secret}&l=${c.lang}${c.port && c.port !== 9001 ? "&p=" + c.port : ""}`;
 
-  if (!data) return (<>
-    <div className="section-title">Scan and control
-      <button className="ghost" style={{ marginLeft: 12 }} onClick={load}>Manage codes</button>
-    </div>
-    <div className="card"><div style={{ color: "var(--muted)", fontSize: 13 }}>QR codes that open only the functions of a floor, a room or a function on any phone on the home network. Asks for the edge's password.</div>
-      {err && <div className="msg err">✗ {err}</div>}</div>
-  </>);
-
-  const cat = data.catalog, where = (c) => {
-    const s = c.scope || {}; if (s.none) return "bell only";
-    const parts = [...(s.floors || []).map((n) => "floor " + n), ...(s.rooms || []).map((id) => (cat.rooms.find((r) => r.id === id) || {}).label || "?")];
-    return (parts.join(", ") || "whole house") + ((s.kinds || []).length ? " · " + s.kinds.map((k) => KIND_LABEL[k]).join(", ") : "");
-  };
+  if (!data) return <PasswordNote err={err} retry={load} />;
+  const cat = data.catalog;
   return (<>
-    <div className="section-title">Scan and control
-      <span className={"badge" + (data.broker.connected ? " ok" : "")} style={{ marginLeft: 12 }}>{data.broker.connected ? "broker connected" : "no broker"}</span>
-      <span className="src" style={{ marginLeft: 10 }}>{cat.tiles} tiles in the twin</span>
-    </div>
-    {err && <div className="card"><div className="msg err">✗ {err}</div></div>}
-    {cat.tiles === 0 && <div className="card"><div className="msg err">The digital twin has nothing to switch yet: connect the CCU or Hue, update their config and generate the C-BOX above.</div></div>}
+    {err && <PasswordNote err={err} retry={load} />}
+    {cat.tiles === 0 && <div className="app-empty"><p>{t("The digital twin has nothing to switch yet: connect the CCU or Hue, update their configuration and generate the twin.")}</p></div>}
 
-    <div className="card codes-form">
-      <h2>New code</h2>
-      <input placeholder="Name on the card, e.g. Ground floor lights" value={f.name} maxLength={60} onChange={(e) => setF({ ...f, name: e.target.value })} />
+    <section className="app-panel">
+      <h2 className="app-panel__title">{t("New code")}<span className="app-shell__spacer" />
+        <span className={"app-badge" + (data.broker.connected ? " app-badge--ok" : " app-badge--bad")}>{data.broker.connected ? t("broker connected") : t("no broker")}</span>
+      </h2>
+      <label className="app-field"><span>{t("Name on the card")}</span>
+        <input className="app-input" placeholder={t("e.g. Ground floor lights")} value={f.name} maxLength={60} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
       {f.bell !== "ring" && (<>
-        <div className="pick"><span className="k">Floors</span>{cat.floors.map((n) => (<label key={n}><input type="checkbox" checked={f.floors.includes(n)} onChange={() => setF({ ...f, floors: toggle(f.floors, n) })} /> {n}</label>))}</div>
-        <div className="pick"><span className="k">Rooms</span>{cat.rooms.map((r) => (<label key={r.id}><input type="checkbox" checked={f.rooms.includes(r.id)} onChange={() => setF({ ...f, rooms: toggle(f.rooms, r.id) })} /> {r.label}{r.source === "hue" ? " (Hue)" : ""}</label>))}</div>
-        <div className="pick"><span className="k">Functions</span>{cat.kinds.map((k) => (<label key={k}><input type="checkbox" checked={f.kinds.includes(k)} onChange={() => setF({ ...f, kinds: toggle(f.kinds, k) })} /> {KIND_LABEL[k]}</label>))}</div>
-        <div className="hint">Nothing ticked under floors and rooms: the whole house. Nothing under functions: all of them.</div>
+        <div className="app-field"><span>{t("Floors")}</span><div className="app-chips">{cat.floors.map((n) => (
+          <button key={n} className={"app-chip" + (f.floors.includes(n) ? " app-chip--on" : "")} onClick={() => setF({ ...f, floors: toggle(f.floors, n) })}>{t("floor {n}", { n })}</button>))}</div></div>
+        <div className="app-field"><span>{t("Rooms")}</span><div className="app-chips">{cat.rooms.map((r) => (
+          <button key={r.id} className={"app-chip" + (f.rooms.includes(r.id) ? " app-chip--on" : "")} onClick={() => setF({ ...f, rooms: toggle(f.rooms, r.id) })}>{word(r.name || r.label)}{r.source === "hue" ? <small>Hue</small> : null}</button>))}</div></div>
+        <div className="app-field"><span>{t("Functions")}</span><div className="app-chips">{cat.kinds.map((k) => (
+          <button key={k} className={"app-chip" + (f.kinds.includes(k) ? " app-chip--on" : "")} onClick={() => setF({ ...f, kinds: toggle(f.kinds, k) })}>{t(KIND_LABEL[k])}</button>))}</div></div>
+        <p className="app-panel__hint">{t("Nothing chosen under floors and rooms: the whole house. Nothing under functions: all of them.")}</p>
       </>)}
-      <div className="pick"><span className="k">Door bell</span>
-        <select value={f.bell} onChange={(e) => setF({ ...f, bell: e.target.value })}>
-          <option value="none">no bell</option><option value="listen">this phone rings with the door bell</option><option value="ring">this phone is the door bell (no tiles)</option>
-        </select>
-        <span className="k" style={{ marginLeft: 12 }}>Language</span>
-        <select value={f.lang} onChange={(e) => setF({ ...f, lang: e.target.value })}><option value="en">English</option><option value="de">Deutsch</option><option value="fr">Français</option></select>
+      <div className="app-row">
+        <label className="app-field"><span>{t("Door bell")}</span>
+          <select className="app-select" value={f.bell} onChange={(e) => setF({ ...f, bell: e.target.value })}>
+            <option value="none">{t("no bell")}</option>
+            <option value="listen">{t("this phone rings with the door bell")}</option>
+            <option value="ring">{t("this phone is the door bell (no tiles)")}</option>
+          </select></label>
+        <div className="app-field"><span>{t("Language of the card and the phone")}</span>
+          <div className="app-seg" style={{ margin: 0 }} role="group">{LANGS.map((l) => (
+            <button key={l.id} className={"app-seg__option" + (codeLang === l.id ? " app-seg__option--on" : "")} onClick={() => setF({ ...f, lang: l.id })} title={l.name}>{l.id}</button>))}</div></div>
       </div>
-      <button onClick={make} disabled={!f.name.trim() || !data.broker.connected}>Make code</button>
-    </div>
+      <div className="app-row"><button className="app-button" onClick={make} disabled={!f.name.trim() || !data.broker.connected}>{t("Make code")}</button></div>
+    </section>
 
     {made.length > 0 && (
-      <div className="card">
-        <h2>New: print or scan now <button className="ghost" style={{ marginLeft: "auto" }} onClick={() => window.print()}>Print</button></h2>
-        <div className="hint">The edge does not keep a code's secret: these QR codes are gone when you leave this page.</div>
-        <input value={base} onChange={(e) => setBase(e.target.value)} aria-label="Address the phones use for this edge" />
-        {local && <div className="msg err">This address only works on this computer. Enter the edge's address on the home network, e.g. http://192.168.x.x:1880.</div>}
-        <div className="sheet">{made.map((c) => (
-          <div className="qr-card" key={c.id}><Qr text={link(c)} /><div className="qr-name">{c.name}</div><div className="qr-sub">{where(c)}{c.bell !== "none" ? " · " + BELL_LABEL[c.bell] : ""}</div></div>
+      <section className="app-panel dhe-print">
+        <h2 className="app-panel__title">{t("New: print or scan now")}<span className="app-shell__spacer" />
+          <button className="app-button app-button--small" onClick={() => window.print()}>{t("Print")}</button></h2>
+        <p className="app-panel__hint">{t("The edge does not keep a code's secret: these QR codes are gone when you leave this page.")}</p>
+        <label className="app-field"><span>{t("Address the phones use for this edge")}</span><input className="app-input" value={base} onChange={(e) => setBase(e.target.value)} /></label>
+        {LOCAL.test(base) && <p className="app-msg app-msg--err">{t("This address only works on this computer. Enter the edge's address on the home network, e.g. http://192.168.x.x:1880.")}</p>}
+        <div className="dhe-sheet">{made.map((c) => (
+          <div className="dhe-card" key={c.id} lang={c.lang}>
+            <span className="dhe-card__lang" title={(LANGS.find((l) => l.id === c.lang) || {}).name}>{String(c.lang).toUpperCase()}</span>
+            <span className="dhe-card__brand">digitalhome</span>
+            <Qr text={link(c)} />
+            <div className="dhe-card__name">{c.name}</div>
+            <div className="dhe-card__sub">{whereText(c, cat, word, c.lang)}{c.bell !== "none" ? " · " + tIn(c.lang, BELL_LABEL[c.bell]) : ""}</div>
+            <div className="dhe-card__how">{tIn(c.lang, "Scan with the phone's camera, on the home Wi-Fi")}</div>
+          </div>
         ))}</div>
-      </div>
+      </section>
     )}
 
-    {bell && (
-      <div className="card codes-form">
-        <h2>When the door bell rings <button className="ghost" style={{ marginLeft: "auto" }} onClick={testBell}>Test</button></h2>
-        <div className="hint">Phones with a listening code always ring. Tick what else should announce it. {bellMsg}</div>
-        <div className="pick"><span className="k">Hue blink</span>{bell.options.lights.length === 0 && <span className="hint">no Hue lights in the twin</span>}
-          {bell.options.lights.map((l) => (<label key={l.id}><input type="checkbox" checked={bell.bell.lights.includes(l.id)} onChange={() => pickBell("lights", l.id)} /> {l.label}{l.room ? " (" + l.room + ")" : ""}</label>))}</div>
-        <div className="pick"><span className="k">Chime</span>{bell.options.chimes.length === 0 && <span className="hint">no Homematic chime in the twin</span>}
-          {bell.options.chimes.map((c) => (<label key={c.id}><input type="checkbox" checked={bell.bell.chimes.includes(c.id)} onChange={() => pickBell("chimes", c.id)} /> {c.label}</label>))}</div>
-      </div>
-    )}
-
-    <div className="card">
-      <h2>Codes</h2>
-      {data.codes.length === 0 && <div style={{ color: "var(--muted)" }}>No codes yet.</div>}
-      {data.codes.map((c) => (
-        <div className="code-row" key={c.id}>
-          <span className="dot2" style={{ background: c.online ? "var(--ok)" : "var(--off)" }} title={c.online ? "a phone is using it" : "not in use"} />
-          <span className="nm">{c.name}</span>
-          <span className="ty">{where(c)} · {c.tiles} tiles{c.bell !== "none" ? " · " + BELL_LABEL[c.bell] : ""}</span>
-          <button className="ghost" onClick={() => revoke(c)}>Revoke</button>
+    <section className="app-panel">
+      <h2 className="app-panel__title">{t("Codes")}<span className="app-shell__spacer" /><span className="dhe-count">{t("{n} tiles in the twin", { n: cat.tiles })}</span></h2>
+      {data.codes.length === 0 && <p className="app-panel__hint">{t("No codes yet.")}</p>}
+      <div>{data.codes.map((c) => (
+        <div className="dhe-code" key={c.id}>
+          <span className={"app-dot" + (c.online ? " app-dot--on" : "")} title={c.online ? t("a phone is using it") : t("not in use")} />
+          <span>{c.name} <span className="dhe-lang app-muted">{String(c.lang || "en").toUpperCase()}</span></span>
+          <span className="dhe-code__where">{whereText(c, cat, word, lang)} · {t("{n} tiles", { n: c.tiles })}{c.bell !== "none" ? " · " + t(BELL_LABEL[c.bell]) : ""}</span>
+          <button className="app-button app-button--ghost app-button--danger app-button--small" onClick={() => revoke(c)}>{t("Revoke")}</button>
         </div>
-      ))}
-    </div>
-    <style>{css}</style>
+      ))}</div>
+    </section>
   </>);
 }
 
-const css = `
-  .codes-form .pick{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:8px 0;font-size:14px}
-  .codes-form .pick .k{color:var(--muted);min-width:76px} .codes-form .pick label{white-space:nowrap} .codes-form .pick input{width:auto;margin:0 4px 0 0}
-  main>.card+.card{margin-top:16px}
-  select{padding:8px 10px;background:#0b1324;border:1px solid var(--line);border-radius:8px;color:var(--fg);font-size:14px}
-  .hint{color:var(--muted);font-size:13px;margin:4px 0 8px}
-  .sheet{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-top:12px}
-  .qr-card{background:#fff;color:#0f172a;border-radius:12px;padding:14px;text-align:center;break-inside:avoid}
-  .qr{width:100%;aspect-ratio:1;display:block} .qr-name{font-size:18px;font-weight:700;margin-top:8px;overflow-wrap:anywhere} .qr-sub{font-size:12px;color:#475569}
-  .code-row{display:grid;grid-template-columns:14px minmax(120px,1fr) 2fr auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed rgba(148,163,184,.12);font-size:14px}
-  .code-row:last-child{border:0} .code-row .ty{color:var(--muted);font-size:13px}
-  @media (max-width:640px){.code-row{grid-template-columns:14px 1fr auto} .code-row .ty{grid-column:2 / 4;grid-row:2}}
-  @media print{
-    body{background:#fff} header,footer,.section-title,.card>h2,.card>.hint,.card>input,.card>.msg{display:none!important}
-    main>*{display:none!important} main>.card:has(.sheet){display:block!important;border:0;background:none;padding:0}
-    .sheet{grid-template-columns:repeat(3,1fr);gap:8mm} .qr-card{border:1px solid #94a3b8}
-  }
-`;
+export function Bell({ active }) {
+  const { t, lang } = useI18n();
+  const [bell, setBell] = useState(null);
+  const [err, setErr] = useState(null);
+  const [msg, setMsg] = useState("");
+  const word = useHomeWords(lang, !!bell);
+  const load = () => panelApi("GET", "bell").then((j) => { setBell(j); setErr(null); }, setErr);
+  useEffect(() => { if (active && !bell) load(); }, [active]);
+  if (!bell) return <PasswordNote err={err} retry={load} />;
+  const pick = (kind, id) => {
+    const next = { ...bell.bell, [kind]: toggle(bell.bell[kind], id) };
+    setBell({ ...bell, bell: next });
+    panelApi("PUT", "bell", next).then(setBell, setErr);
+  };
+  const test = () => panelApi("POST", "bell/test").then((j) => setMsg(j.targets ? t("sent to {n}", { n: j.targets }) : t("nothing chosen")), (e) => setMsg(e.message));
+  return (
+    <section className="app-panel">
+      <h2 className="app-panel__title">{t("When the door bell rings")}<span className="app-shell__spacer" />
+        <button className="app-button app-button--ghost app-button--small" onClick={test}>{t("Test")}</button></h2>
+      <p className="app-panel__hint">{t("Phones with a listening code always ring. Choose what else in the house announces it: Hue lights blink for 15 seconds, a Homematic chime sounds.")}</p>
+      {msg && <p className="app-msg app-msg--busy">{msg}</p>}
+      {err && <p className="app-msg app-msg--err">✗ {err.message}</p>}
+      <div className="app-field"><span>{t("Hue lights blink")}</span>
+        {bell.options.lights.length === 0 ? <p className="app-panel__hint">{t("no Hue lights in the twin")}</p> : <div className="app-chips">{bell.options.lights.map((l) => (
+          <button key={l.id} className={"app-chip" + (bell.bell.lights.includes(l.id) ? " app-chip--on" : "")} onClick={() => pick("lights", l.id)}>{word(l.label)}{l.room ? <small>{word(String(l.room).replace(/^\d+\.\s*/, ""))}</small> : null}</button>))}</div>}</div>
+      <div className="app-field"><span>{t("Chime")}</span>
+        {bell.options.chimes.length === 0 ? <p className="app-panel__hint">{t("no Homematic chime in the twin")}</p> : <div className="app-chips">{bell.options.chimes.map((c) => (
+          <button key={c.id} className={"app-chip" + (bell.bell.chimes.includes(c.id) ? " app-chip--on" : "")} onClick={() => pick("chimes", c.id)}>{word(c.label)}</button>))}</div>}</div>
+    </section>
+  );
+}

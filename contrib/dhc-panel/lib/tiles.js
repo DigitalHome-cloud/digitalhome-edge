@@ -136,10 +136,11 @@ function tilesForScope(catalog, scope) {
     });
 }
 
-/** What the phone gets: no device references, the room as a word. */
-function publicTiles(catalog, tiles) {
+/** What the phone gets: no device references, the room as a word, both in the phone's language (`tr`). */
+function publicTiles(catalog, tiles, tr) {
+    const say = tr || ((s) => s);
     const label = new Map(catalog.rooms.map((r) => [r.id, plainRoom(r.label)]));
-    return tiles.map((t) => ({ id: t.id, kind: t.kind, func: t.func, label: t.label, room: t.room ? label.get(t.room) : "" }));
+    return tiles.map((t) => ({ id: t.id, kind: t.kind, func: t.func, label: say(t.label), room: t.room ? say(label.get(t.room)) : "" }));
 }
 
 /**
@@ -164,4 +165,14 @@ function commandFor(tile, action, value) {
     return null;
 }
 
-module.exports = { buildCatalog, tilesForScope, publicTiles, commandFor, parseCcuRef, shortId, KINDS, CCU_RULES };
+/** Every word the home shows, as it is called in the CCU or the Hue app: the keys of the label dictionary. */
+function homeWords(catalog) {
+    const roomName = new Map(catalog.rooms.map((r) => [r.id, plainRoom(r.label)]));
+    return [
+        ...catalog.rooms.map((r) => ({ original: plainRoom(r.label), where: "room" })),
+        ...catalog.tiles.map((t) => ({ original: t.label, where: "tile", room: t.room ? roomName.get(t.room) : "" })),
+        ...(catalog.chimes || []).map((c) => ({ original: c.label, where: "chime" })),
+    ];
+}
+
+module.exports = { buildCatalog, tilesForScope, publicTiles, homeWords, plainRoom, commandFor, parseCcuRef, shortId, KINDS, CCU_RULES };
