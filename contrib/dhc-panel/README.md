@@ -32,7 +32,12 @@ their place and the broker does not start.
 
 Then, from a computer on the home network, open `http://<edge>:1880/app/`, **Manage codes** (user `dhcedge`,
 password from `sudo dhcedge show-secrets`), make a code and scan it with a phone on the home Wi-Fi.
-Port 9001 must be reachable from the phones.
+Port 9001 must be reachable from the phones. With ufw on (default deny incoming), open it to the home network
+only, or the page loads but says "no link":
+
+```bash
+sudo ufw allow from 192.168.1.0/24 to any port 9001 proto tcp comment 'dhe-mosquitto websocket (panel phones)'
+```
 
 Check:
 
