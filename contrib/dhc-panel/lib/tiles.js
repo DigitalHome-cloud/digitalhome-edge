@@ -46,8 +46,9 @@ function plainName(name, type) {
     return rest || n;
 }
 
-// "0.Kitchen" -> "Kitchen": the floor number some homes put before a room's name.
-function plainRoom(label) { return String(label || "").replace(/^\d+\.\s*/, "") || String(label || ""); }
+// "0.Kitchen", "1.6 Garden", "2.3. Bath" -> the name alone: the floor (and place) numbers some homes put
+// before a room's name to sort it in the CCU. The floor is known separately (dhc:floor).
+function plainRoom(label) { return String(label || "").replace(/^\d+\.(?:\d+\.?)?\s*/, "") || String(label || ""); }
 
 function asList(v) { return v == null ? [] : (Array.isArray(v) ? v : [v]); }
 

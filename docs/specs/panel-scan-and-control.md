@@ -68,8 +68,8 @@ starts with its device type is shown without it; a room "0.Kitchen" is shown as 
 ## Labels
 
 The home's words, in the code's language. A room or a device keeps the name it has in the CCU or the Hue app:
-**that name is the key**, as the edge shows it (a CCU name without its device type, a room without its floor
-number). A translation is looked up by it; a missing one shows the name itself, so nothing is ever blank.
+**that name is the key**, as the edge shows it (a CCU name without its device type, a room without its floor and
+place numbers: "1.6 Garden" is "Garden"). A translation is looked up by it; a missing one shows the name itself, so nothing is ever blank.
 
 - One dictionary per edge: `/opt/dhe/cbox/labels.json` (0600, runtime only: it holds room and device names),
   `{ version: 1, labels: { "<original>": { en, de, fr } } }`, read again when it changes.

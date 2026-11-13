@@ -46,6 +46,17 @@ describe("the tiles read from the twin", () => {
     });
 });
 
+describe("room names", () => {
+    it("drops the CCU's sort numbers before the name, nothing else", () => {
+        expect(tiles.plainRoom("0.Kitchen")).toBe("Kitchen");
+        expect(tiles.plainRoom("1.6 Garden")).toBe("Garden");
+        expect(tiles.plainRoom("2.3. Bath")).toBe("Bath");
+        expect(tiles.plainRoom("Living room")).toBe("Living room");
+        expect(tiles.plainRoom("3 Kings")).toBe("3 Kings");
+        expect(tiles.plainRoom("12.")).toBe("12.");
+    });
+});
+
 describe("scopes", () => {
     const room = (label) => catalog.rooms.find((r) => r.label === label).id;
     it("by floor", () => {
