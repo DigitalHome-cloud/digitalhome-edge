@@ -60,8 +60,11 @@ function parseCcuRef(ref) {
 
 /**
  * Read the twin's graph into rooms and tiles.
- * A tile: { id, kind, func, label, room, floor, source, ref, tempRef? }
+ * A tile: { id, kind, func, label, room, floor, source, ref, name, tempRef? }
  *   ref (ccu): "<device name>:<channel>/<DATAPOINT>"; ref (hue): the light's uniqueid.
+ *   name: as the CCU or the Hue app shows it ("HM-LC-Sw4-DR IEQ0168402:1"), for the label dictionary.
+ * others: every other device (buttons, contacts, sensors), only for the label dictionary:
+ *   { label, name, room }. Never tiles, never sent to a phone.
  */
 function buildCatalog(graph) {
     const nodes = Array.isArray(graph) ? graph : [];
@@ -74,7 +77,7 @@ function buildCatalog(graph) {
     }
     const roomByUri = new Map(rooms.map((r) => [r.uri, r]));
 
-    const tiles = [], chimes = [];
+    const tiles = [], chimes = [], others = [];
     for (const dev of nodes) {
         const points = asList(dev["brick:hasPoint"]).map((p) => byId.get(typeof p === "string" ? p : p && p["@id"])).filter(Boolean);
         if (!points.length) continue;
@@ -83,11 +86,11 @@ function buildCatalog(graph) {
 
         if (dev["dhc:source"] === "hue") {
             const caps = new Set(points.map((p) => String(p["dhc:capability"] || "").split("/").pop()));
-            if (!caps.has("on")) continue;
+            if (!caps.has("on")) { others.push({ label: dev["rec:label"] || "?", name: dev["rec:label"] || "?", room: base.room }); continue; }
             const uid = String(dev["dhc:sourceRef"] || "").replace(/^hue:/, "");
             const isLight = dev["@type"] === "brick:Luminaire";
             const kind = caps.has("brightness") ? "dimmer" : "switch";
-            tiles.push(Object.assign({ id: shortId(dev["@id"]), kind, func: isLight ? "light" : "switch", label: dev["rec:label"] || "?", source: "hue", ref: uid }, base));
+            tiles.push(Object.assign({ id: shortId(dev["@id"]), kind, func: isLight ? "light" : "switch", label: dev["rec:label"] || "?", source: "hue", ref: uid, name: dev["rec:label"] || "?" }, base));
             continue;
         }
         if (dev["dhc:source"] !== "ccu") continue;
@@ -96,12 +99,19 @@ function buildCatalog(graph) {
         if (chime) {
             for (const hit of refs.filter((r) => r.dp === chime.dp && chime.channels.includes(r.channel))) {
                 const ref = hit.name + ":" + hit.channel + "/" + hit.dp;
-                chimes.push({ id: shortId("ccu:" + ref), label: plainName(dev["rec:label"] || hit.name, dev["dhc:deviceType"]) + " " + hit.channel, source: "ccu", ref });
+                chimes.push({ id: shortId("ccu:" + ref), label: plainName(dev["rec:label"] || hit.name, dev["dhc:deviceType"]) + " " + hit.channel, source: "ccu", ref, name: hit.name + ":" + hit.channel });
             }
             continue;
         }
         const rule = CCU_RULES.find((r) => r.match.test(dev["dhc:deviceType"] || ""));
-        if (!rule) continue;
+        if (!rule) {
+            // VIR-…: the CCU's own copies of the Hue lights, which have their names already
+            if (/^VIR-/.test(dev["dhc:deviceType"] || "")) continue;
+            const first = refs.map((r) => Number(r.channel)).filter((c) => c > 0).sort((a, b) => a - b)[0];
+            const devName = refs.length ? refs[0].name : dev["rec:label"] || "?";
+            others.push({ label: plainName(dev["rec:label"] || devName, dev["dhc:deviceType"]), name: devName + (first ? ":" + first : ""), room: base.room });
+            continue;
+        }
         const hits = refs.filter((r) => r.dp === rule.dp && (!rule.channels || rule.channels.includes(r.channel)));
         const temp = rule.temp ? refs.find((r) => r.dp === rule.temp) : null;
         for (const hit of hits) {
@@ -109,14 +119,14 @@ function buildCatalog(graph) {
             const tile = Object.assign({
                 id: shortId("ccu:" + ref), kind: rule.kind, func: KIND_OF[rule.kind],
                 label: plainName(dev["rec:label"] || hit.name, dev["dhc:deviceType"]) + (hits.length > 1 ? " " + hit.channel : ""),
-                source: "ccu", ref,
+                source: "ccu", ref, name: hit.name + ":" + hit.channel,
             }, base);
             if (temp) tile.tempRef = temp.name + ":" + temp.channel + "/" + temp.dp;
             tiles.push(tile);
         }
     }
     const floors = Array.from(new Set(rooms.map((r) => r.floor).filter((f) => f != null))).sort((a, b) => a - b);
-    return { rooms, floors, tiles, chimes, kinds: KINDS };
+    return { rooms, floors, tiles, chimes, others, kinds: KINDS };
 }
 
 /**
@@ -166,13 +176,19 @@ function commandFor(tile, action, value) {
     return null;
 }
 
-/** Every word the home shows, as it is called in the CCU or the Hue app: the keys of the label dictionary. */
+/**
+ * Every word of the home: the keys of the label dictionary (`original`, the name as the edge shows it), each with
+ * `name`, the name as the CCU or the Hue app shows it, ID and channel included. Those names stay as they are;
+ * the translations live on the edge.
+ */
 function homeWords(catalog) {
     const roomName = new Map(catalog.rooms.map((r) => [r.id, plainRoom(r.label)]));
+    const at = (id) => (id ? roomName.get(id) : "");
     return [
-        ...catalog.rooms.map((r) => ({ original: plainRoom(r.label), where: "room" })),
-        ...catalog.tiles.map((t) => ({ original: t.label, where: "tile", room: t.room ? roomName.get(t.room) : "" })),
-        ...(catalog.chimes || []).map((c) => ({ original: c.label, where: "chime" })),
+        ...catalog.rooms.map((r) => ({ original: plainRoom(r.label), name: r.label, where: "room" })),
+        ...catalog.tiles.map((t) => ({ original: t.label, name: t.name || t.label, where: "tile", room: at(t.room) })),
+        ...(catalog.chimes || []).map((c) => ({ original: c.label, name: c.name || c.label, where: "chime" })),
+        ...(catalog.others || []).map((o) => ({ original: o.label, name: o.name, where: "other", room: at(o.room) })),
     ];
 }
 

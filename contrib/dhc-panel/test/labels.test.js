@@ -52,6 +52,15 @@ describe("the label dictionary", () => {
         expect(e[e.length - 1]).toMatchObject({ original: "Old room", where: [], de: "Alter Raum" });
         expect(new Set(e.map((x) => x.original)).size).toBe(e.length);
     });
+    it("shows each word with its name in the CCU or Hue, and lists the devices that are no tiles", () => {
+        const e = new Labels(tmp()).entries(tiles.homeWords(catalog));
+        expect(e.find((x) => x.original === "Kitchen counter").names).toEqual(["HmIP-BSM Kitchen counter:4"]);
+        expect(e.find((x) => x.original === "Kitchen").names).toEqual(["0.Kitchen"]);
+        const other = e.filter((x) => x.where.includes("other"));
+        expect(other.length).toBeGreaterThan(0);
+        expect(other.some((x) => x.names.some((n) => /^VIR-/.test(n)))).toBe(false);
+        expect(tiles.publicTiles(catalog, catalog.tiles).some((t) => "name" in t)).toBe(false);
+    });
     it("gives a phone its tiles and rooms in its language", () => {
         const l = new Labels(tmp());
         l.set({ Kitchen: { fr: "Cuisine" }, "Kitchen counter": { fr: "Plan de travail" } });

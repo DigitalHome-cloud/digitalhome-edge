@@ -80,18 +80,19 @@ class Labels {
 
     /**
      * Every word the home shows, with what is known for it:
-     * [{ original, where: ["room"|"tile"|"chime"], rooms: [room], en, de, fr }].
+     * [{ original, names: [as in the CCU or Hue], where: ["room"|"tile"|"chime"|"other"], rooms: [room], en, de, fr }].
      * Words no longer in the twin but still translated come last (where: []).
      */
     entries(words) {
         const out = new Map();
         for (const w of words) {
-            const e = out.get(w.original) || { original: w.original, where: [], rooms: [] };
+            const e = out.get(w.original) || { original: w.original, names: [], where: [], rooms: [] };
             if (!e.where.includes(w.where)) e.where.push(w.where);
+            if (w.name && !e.names.includes(w.name)) e.names.push(w.name);
             if (w.room && !e.rooms.includes(w.room)) e.rooms.push(w.room);
             out.set(w.original, e);
         }
-        for (const k of Object.keys(this.labels)) if (!out.has(k)) out.set(k, { original: k, where: [], rooms: [] });
+        for (const k of Object.keys(this.labels)) if (!out.has(k)) out.set(k, { original: k, names: [], where: [], rooms: [] });
         return [...out.values()].map((e) => Object.assign(e, this.labels[e.original] || {}));
     }
 }

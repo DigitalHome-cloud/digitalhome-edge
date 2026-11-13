@@ -71,10 +71,15 @@ The home's words, in the code's language. A room or a device keeps the name it h
 **that name is the key**, as the edge shows it (a CCU name without its device type, a room without its floor and
 place numbers: "1.6 Garden" is "Garden"). A translation is looked up by it; a missing one shows the name itself, so nothing is ever blank.
 
+**The CCU and the Hue app keep their own names**, IDs and all ("HM-LC-Sw4-DR IEQ0168402:1"): nothing is renamed
+there for the phones. The translations live on the edge only.
+
 - One dictionary per edge: `/opt/dhe/cbox/labels.json` (0600, runtime only: it holds room and device names),
   `{ version: 1, labels: { "<original>": { en, de, fr } } }`, read again when it changes.
-- Edited in the edge portal (*Labels*: every word of the twin, filter by kind or by what is missing in a
-  language) or over `GET`/`PUT /api/panel/labels`.
+- Edited in the edge portal (*Labels*: columns *Original (ID)*, i.e. the name as the CCU or Hue shows it, then
+  EN, FR, DE; filter by kind or by what is missing in a language) or over `GET`/`PUT /api/panel/labels`.
+- Every device of the twin is listed, also those that are no tile (buttons, contacts, sensors, the weather
+  station: *other devices*), so each has its words ready; the CCU's copies of the Hue lights (`VIR-…`) are not.
 - The node translates the tiles and rooms of each code's `scope` into that code's `lang`. A change reaches the
   phones at once (the retained `scope` is published again).
 - Words that leave the twin keep their translations and are listed as no longer in the twin.

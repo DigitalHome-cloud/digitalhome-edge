@@ -136,7 +136,9 @@ export default {
 
   // labels
   "The home's words": "Die Wörter des Hauses",
-  "Every room and device keeps the name it has in the CCU or the Hue app: that name is the key. Give it a word in each language; an empty field shows the name as it is. Phones get the new words at once, in their code's language.": "Jeder Raum und jedes Gerät behält den Namen aus der CCU oder der Hue-App: Dieser Name ist der Schlüssel. Geben Sie ihm ein Wort in jeder Sprache; ein leeres Feld zeigt den Namen, wie er ist. Die Handys bekommen die neuen Wörter sofort, in der Sprache ihres Codes.",
+  "Original (ID)": "Original (ID)",
+  "other device": "anderes Gerät",
+  "Every room and device keeps the name it has in the CCU or the Hue app; the translations live on this edge only. Give it a word in each language; an empty field shows the name as it is. Phones get the new words at once, in their code's language.": "Jeder Raum und jedes Gerät behält den Namen aus der CCU oder der Hue-App; die Übersetzungen liegen nur auf diesem Edge. Geben Sie ihm ein Wort in jeder Sprache; ein leeres Feld zeigt den Namen, wie er ist. Die Handys bekommen die neuen Wörter sofort, in der Sprache ihres Codes.",
   "Search": "Suchen",
   "All": "Alle",
   "Chimes": "Gongs",
@@ -145,7 +147,6 @@ export default {
   "all words": "alle Wörter",
   "missing in {lang}": "fehlt auf {lang}",
   "No words yet: the digital twin is empty.": "Noch keine Wörter: Der digitale Zwilling ist leer.",
-  "Name in the home": "Name im Haus",
   "room": "Raum",
   "device": "Gerät",
   "chime": "Gong",
